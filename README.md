@@ -72,8 +72,9 @@ All settings are read from the environment in `cairn_garmin/config.py`.
 | `CAIRN_GARMIN_FETCH_ACTIVITY_GEAR` | `true` | Look up the gear recorded on each fetched activity (one extra call per activity). |
 | `CAIRN_PROTO_PATH` | `./proto` | Location of the generated proto stubs. |
 
-Provider name (`garmin`), package and worker version are baked into
-`config.py` and are not overridable; they define the worker's contract.
+Provider name (`garmin`), package and parser version are baked into
+`config.py` and are not overridable; they define the worker's contract (see
+[Versioning](#versioning)).
 
 ### NATS auth
 
@@ -98,6 +99,18 @@ The worker connects in one of three ways, in this order of precedence:
 real nats-server both ways: as a static user carrying the template, and through
 the auth-callout flow with a test responder that issues the user JWT the way
 core does.
+
+## Versioning
+
+Three versions, defined in [core ADR 0005](https://github.com/opencairn-org/cairn-core/blob/main/docs/adr/0005-provider-versioning.md)
+and the [provider contract](https://docs.opencairn.org/architecture/provider-contract#versioning):
+
+- **Release** (`vX.Y.Z`, the git tag): major.minor must match core.
+- **Dataset** (`N`, the archive envelope `version`): bump only when the parser
+  can no longer read the previous archive format.
+- **Parser** (`N.M`, sent as `worker_version`): bump `M` with **every** change
+  to the parsed output; a dataset bump resets it to `N.0`. Parser `N.x` must
+  read every dataset `N` archive. Versions only move forward.
 
 ## What it does
 
