@@ -6,6 +6,34 @@ to follow [Semantic Versioning](https://semver.org/). Dates are ISO-8601.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-25
+
+Needs cairn-core 0.5.0 (per-pool subjects and the release check; the Core
+must be upgraded first). Upgrade the worker in place: it drains jobs queued
+on the 0.4 subjects once. Activities imported before 0.5.0 need a re-fetch to
+gain gear: their archives have none.
+
+### Added
+- The archive envelope holds every parser input, now including the
+  per-activity gear lookup (`null` when not looked up). Import and re-parse
+  run the same `mapping.parse_archive`, so a re-parse reproduces the import
+  and yields gear for archives that have it.
+- Parser version `1.2` (gear from the archive; stable stream channel order)
+  on dataset 1; `tests/test_parser_golden.py` pins the output per parser
+  version. `parse_blob` refuses archives of another dataset and hands back
+  jobs whose `min_parser_version` is newer, backing off for about an hour
+  before reporting `parser_too_old`.
+- Payloads carry `gear_unknown` when the archive has no gear lookup, so core
+  keeps the previous gear on re-import.
+- The release is written into the image at build time and sent in presence
+  and results; the worker refuses to run against an incompatible core.
+
+### Changed
+- Jobs, discovery and results are per pool: `cairn.jobs.<job>.garmin.<name>`,
+  `cairn.discover.garmin.<name>`, `cairn.results.<job>.garmin.<name>`.
+- Proto stubs regenerated from the cairn-core 0.5.0 contract; `filelock`
+  updated for pip-audit.
+
 ## [0.4.0] — 2026-10-21
 
 Needs cairn-core 0.4.0 or later (gear events and the `import_gear` job are
