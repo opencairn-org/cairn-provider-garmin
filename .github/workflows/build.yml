@@ -125,6 +125,8 @@ jobs:
         with:
           context: .
           file: Dockerfile
+          build-args: |
+            VERSION=${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,push=true,rewrite-timestamp=true

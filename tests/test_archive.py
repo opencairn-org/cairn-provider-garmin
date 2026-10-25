@@ -54,7 +54,8 @@ def http(monkeypatch: pytest.MonkeyPatch) -> HTTP:
 def test_archive_uploads_envelope(http: HTTP) -> None:
     http.responses = [Resp(200)]
     nc = FakeNC({archive.PRESIGN_SUBJECT: PRESIGN})
-    blob_id, size = asyncio.run(archive.archive(as_nats(nc), "u1", "42", {"activityId": 42}, None))
+    env_in = archive.envelope({"activityId": 42}, None, [{"uuid": "g1"}])
+    blob_id, size = asyncio.run(archive.archive(as_nats(nc), "u1", "42", env_in))
 
     assert blob_id == "raw/garmin/1.json"
     method, url, kw = http.calls[0]
@@ -63,7 +64,10 @@ def test_archive_uploads_envelope(http: HTTP) -> None:
     assert size == len(kw["data"])
     env = json.loads(kw["data"])
     assert env["activity"] == {"activityId": 42}
+    assert env["gear"] == [{"uuid": "g1"}]
+    assert env["version"] == C.DATASET_VERSION
     assert env["provenance"]["provider"] == C.PROVIDER
+    assert env["provenance"]["worker_version"] == C.VERSION
     assert nc.requests[0][1]["content_length"] == size
 
 
@@ -81,7 +85,7 @@ def test_archive_is_best_effort(
 ) -> None:
     http.responses = list(responses)  # the param list is shared between runs
     nc = FakeNC({archive.PRESIGN_SUBJECT: reply})
-    assert asyncio.run(archive.archive(as_nats(nc), "u1", "42", {}, {})) == (None, 0)
+    assert asyncio.run(archive.archive(as_nats(nc), "u1", "42", archive.envelope({}, {}, None))) == (None, 0)
 
 
 def test_upload_result_returns_ref(http: HTTP) -> None:

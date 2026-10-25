@@ -614,7 +614,7 @@ class ExternalRef(_message.Message):
     def __init__(self, user_id: _Optional[str] = ..., provider: _Optional[str] = ..., external_account_id: _Optional[str] = ..., external_id: _Optional[str] = ...) -> None: ...
 
 class JobResult(_message.Message):
-    __slots__ = ("events", "new_watermark", "more_available", "worker_name", "worker_version", "worker_package", "payload_ref", "error", "failed_ref")
+    __slots__ = ("events", "new_watermark", "more_available", "worker_name", "worker_version", "worker_package", "payload_ref", "worker_release", "error", "failed_ref")
     EVENTS_FIELD_NUMBER: _ClassVar[int]
     NEW_WATERMARK_FIELD_NUMBER: _ClassVar[int]
     MORE_AVAILABLE_FIELD_NUMBER: _ClassVar[int]
@@ -622,6 +622,7 @@ class JobResult(_message.Message):
     WORKER_VERSION_FIELD_NUMBER: _ClassVar[int]
     WORKER_PACKAGE_FIELD_NUMBER: _ClassVar[int]
     PAYLOAD_REF_FIELD_NUMBER: _ClassVar[int]
+    WORKER_RELEASE_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     FAILED_REF_FIELD_NUMBER: _ClassVar[int]
     events: _containers.RepeatedCompositeFieldContainer[WorkerEvent]
@@ -631,9 +632,10 @@ class JobResult(_message.Message):
     worker_version: str
     worker_package: str
     payload_ref: PayloadRef
+    worker_release: str
     error: WorkerError
     failed_ref: ExternalRef
-    def __init__(self, events: _Optional[_Iterable[_Union[WorkerEvent, _Mapping]]] = ..., new_watermark: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., more_available: _Optional[bool] = ..., worker_name: _Optional[str] = ..., worker_version: _Optional[str] = ..., worker_package: _Optional[str] = ..., payload_ref: _Optional[_Union[PayloadRef, _Mapping]] = ..., error: _Optional[_Union[WorkerError, _Mapping]] = ..., failed_ref: _Optional[_Union[ExternalRef, _Mapping]] = ...) -> None: ...
+    def __init__(self, events: _Optional[_Iterable[_Union[WorkerEvent, _Mapping]]] = ..., new_watermark: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., more_available: _Optional[bool] = ..., worker_name: _Optional[str] = ..., worker_version: _Optional[str] = ..., worker_package: _Optional[str] = ..., payload_ref: _Optional[_Union[PayloadRef, _Mapping]] = ..., worker_release: _Optional[str] = ..., error: _Optional[_Union[WorkerError, _Mapping]] = ..., failed_ref: _Optional[_Union[ExternalRef, _Mapping]] = ...) -> None: ...
 
 class PayloadRef(_message.Message):
     __slots__ = ("blob_id", "size_bytes", "content_type", "content_sha256")

@@ -1,0 +1,116 @@
+[
+  {
+    "gear": {
+      "payload": {
+        "brand": "Synthetic",
+        "distanceM": 1500.5,
+        "kind": "GEAR_KIND_BIKE",
+        "model": "G1",
+        "name": "Gravel bike"
+      },
+      "ref": {
+        "externalAccountId": "a1",
+        "externalId": "aaaa-1",
+        "provider": "garmin",
+        "userId": "u1"
+      }
+    },
+    "type": "WORKER_EVENT_TYPE_GEAR"
+  },
+  {
+    "activity": {
+      "payload": {
+        "description": "fixture",
+        "discipline": "DISCIPLINE_RIDE_GRAVEL",
+        "elapsedDuration": "620s",
+        "endTime": "2026-07-04T13:50:20Z",
+        "gearExternalId": "aaaa-1",
+        "gearName": "Gravel bike",
+        "movingDuration": "540s",
+        "providerNativeType": "gravel_cycling",
+        "startTime": "2026-07-04T13:40:00Z",
+        "summary": {
+          "avgCadence": 86,
+          "avgHeartRateBpm": 141,
+          "avgPowerW": 182,
+          "avgSpeedMps": 7.78,
+          "caloriesKcal": 310,
+          "distanceM": 4200.5,
+          "elevationGainM": 55.2,
+          "elevationLossM": 50.1,
+          "maxElevationM": 38.2,
+          "maxHeartRateBpm": 172,
+          "maxPowerW": 420,
+          "maxSpeedMps": 12.4,
+          "minElevationM": 34.0,
+          "normalizedPowerW": 190
+        },
+        "timezone": "Europe/Berlin",
+        "title": "Synthetic ride",
+        "type": "ACTIVITY_TYPE_RIDE"
+      },
+      "rawBlobId": "blob-1",
+      "ref": {
+        "externalAccountId": "a1",
+        "externalId": "2000001",
+        "provider": "garmin",
+        "userId": "u1"
+      },
+      "stream": {
+        "altitudeM": [
+          34.0,
+          35.5,
+          37.0
+        ],
+        "cadence": [
+          80,
+          84,
+          86
+        ],
+        "channels": [
+          "STREAM_CHANNEL_LATITUDE",
+          "STREAM_CHANNEL_LONGITUDE",
+          "STREAM_CHANNEL_ALTITUDE",
+          "STREAM_CHANNEL_DISTANCE",
+          "STREAM_CHANNEL_HEART_RATE",
+          "STREAM_CHANNEL_POWER",
+          "STREAM_CHANNEL_CADENCE",
+          "STREAM_CHANNEL_TIME"
+        ],
+        "distanceM": [
+          0.0,
+          450.1,
+          900.3
+        ],
+        "heartRateBpm": [
+          120,
+          135,
+          142
+        ],
+        "latitude": [
+          52.5,
+          52.501,
+          52.502
+        ],
+        "longitude": [
+          13.4,
+          13.401,
+          13.402
+        ],
+        "powerW": [
+          150,
+          175,
+          190
+        ],
+        "resolutionHz": 1.0,
+        "sampleCount": 3,
+        "timeS": [
+          0.0,
+          60.0,
+          120.0
+        ]
+      }
+    },
+    "type": "WORKER_EVENT_TYPE_ACTIVITY"
+  }
+]

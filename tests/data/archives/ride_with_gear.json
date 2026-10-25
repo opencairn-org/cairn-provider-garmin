@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "provenance": {"provider": "garmin", "worker_name": "garmin-fetcher", "worker_version": "1.2", "package": "cairn.workers.garmin", "archived_at": "2026-10-25T12:00:00+00:00"},
+  "activity": {
+    "activityId": 2000001,
+    "activityName": "Synthetic ride",
+    "description": "fixture",
+    "activityTypeDTO": {"typeKey": "gravel_cycling"},
+    "timeZoneUnitDTO": {"unitKey": "Europe/Berlin"},
+    "summaryDTO": {
+      "startTimeGMT": "2026-07-04T13:40:00.0", "distance": 4200.5, "duration": 600.0, "elapsedDuration": 620.0,
+      "movingDuration": 540.0, "elevationGain": 55.2, "elevationLoss": 50.1, "maxElevation": 38.2, "minElevation": 34.0,
+      "averageSpeed": 7.78, "maxSpeed": 12.4, "averageHR": 141.0, "maxHR": 172.0, "averagePower": 182.0, "maxPower": 420.0,
+      "normalizedPower": 190.0, "averageBikingCadenceInRevPerMinute": 86.0, "calories": 310.0
+    }
+  },
+  "details": {
+    "metricDescriptors": [
+      {"key": "directTimestamp", "metricsIndex": 0}, {"key": "directLatitude", "metricsIndex": 1},
+      {"key": "directLongitude", "metricsIndex": 2}, {"key": "directElevation", "metricsIndex": 3},
+      {"key": "sumDistance", "metricsIndex": 4}, {"key": "directHeartRate", "metricsIndex": 5},
+      {"key": "directPower", "metricsIndex": 6}, {"key": "directBikeCadence", "metricsIndex": 7}
+    ],
+    "activityDetailMetrics": [
+      {"metrics": [1783172400000, 52.5, 13.4, 34.0, 0.0, 120, 150, 80]},
+      {"metrics": [1783172460000, 52.501, 13.401, 35.5, 450.1, 135, 175, 84]},
+      {"metrics": [1783172520000, 52.502, 13.402, 37.0, 900.3, 142, 190, 86]}
+    ]
+  },
+  "gear": [
+    {"uuid": "aaaa-1", "gearTypeName": "Bike", "gearStatusName": "active", "displayName": "Gravel bike", "gearMakeName": "Synthetic", "gearModelName": "G1", "totalDistance": 1500.5}
+  ]
+}

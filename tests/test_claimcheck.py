@@ -29,10 +29,10 @@ def test_publish_result_claim_checks_events(monkeypatch: pytest.MonkeyPatch) -> 
         worker_name="garmin-fetcher",
         events=[w.WorkerEvent(type=w.WORKER_EVENT_TYPE_ACTIVITY)],
     )
-    asyncio.run(wk._publish_result("cairn.results.fetch_source.garmin", jr))
+    asyncio.run(wk._publish_result("cairn.results.fetch_source.garmin.garmin-fetcher", jr))
 
     ((subject, data, _),) = js.published
-    assert subject == "cairn.results.fetch_source.garmin"
+    assert subject == "cairn.results.fetch_source.garmin.garmin-fetcher"
     env = json_format.Parse(data, w.JobResult())
     assert env.payload_ref.blob_id == "transfer/garmin/x.json"
     assert env.payload_ref.size_bytes == len(uploaded["body"])
@@ -45,7 +45,7 @@ def test_publish_result_claim_checks_events(monkeypatch: pytest.MonkeyPatch) -> 
 def test_publish_result_inline_when_no_events() -> None:
     wk, js = make_worker()
     jr = w.JobResult(worker_name="garmin-fetcher")
-    asyncio.run(wk._publish_result("cairn.results.fetch_source.garmin", jr))
+    asyncio.run(wk._publish_result("cairn.results.fetch_source.garmin.garmin-fetcher", jr))
 
     ((_, data, _),) = js.published
     env = json_format.Parse(data, w.JobResult())
@@ -55,10 +55,10 @@ def test_publish_result_inline_when_no_events() -> None:
 def test_publish_failure_envelope() -> None:
     wk, js = make_worker()
     body = json.dumps({"ext_id": "99", "account_id": "a1", "user_id": "u1"}).encode()
-    asyncio.run(wk._publish_failure("cairn.jobs.fetch_source.garmin", body, RuntimeError("boom")))
+    asyncio.run(wk._publish_failure("cairn.jobs.fetch_source.garmin.garmin-fetcher", body, RuntimeError("boom")))
 
     ((subject, data, _),) = js.published
-    assert subject == "cairn.results.fetch_source.garmin"
+    assert subject == "cairn.results.fetch_source.garmin.garmin-fetcher"
     env = json_format.Parse(data, w.JobResult())
     assert env.failed_ref.external_id == "99"
     assert env.failed_ref.external_account_id == "a1"
