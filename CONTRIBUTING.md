@@ -43,4 +43,5 @@ prek install      # git hooks from .pre-commit-config.yaml
 
 Update the version in `pyproject.toml` and add a `## [X.Y.Z]` section to
 `CHANGELOG.md`, then on `main` run `make release V=vX.Y.Z` and push the tag.
-The build workflow re-runs `make check` and publishes the signed image.
+The build workflow re-runs `make check`, publishes the signed image and
+creates the GitHub release (CHANGELOG section as notes, SBOM attached).
