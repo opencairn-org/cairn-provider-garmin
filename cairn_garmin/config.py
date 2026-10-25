@@ -5,14 +5,29 @@ from __future__ import annotations
 import os
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
-# PROVIDER + PACKAGE + VERSION are compile-time identity: with the capability
-# manifest they define this worker's schema/contract, so they are baked into the
-# source (NOT env-overridable). Bump VERSION here when the worker's output shape
-# changes.
+# PROVIDER + PACKAGE + versions are compile-time identity (core ADR 0005),
+# baked into the source, NOT env-overridable. DATASET_VERSION is the archive
+# envelope format; bump it only when the parser can no longer read the previous
+# one. VERSION is the parser version DATASET_VERSION.M: bump M with EVERY change
+# to the parsed output (tests/test_parser_golden.py enforces it).
 PROVIDER = "garmin"
 PACKAGE = "cairn.workers.garmin"
-VERSION = "1"
+DATASET_VERSION = 1
+VERSION = "1.2"  # 1.1: gear id per activity; 1.2: gear read from the archive
+
+
+def _read_release() -> str:
+    """Release tag written into the image at build time (Dockerfile); "" in dev."""
+    try:
+        return (Path(__file__).with_name("RELEASE")).read_text().strip()
+    except OSError:
+        return ""
+
+
+# Core requires the same major.minor (core ADR 0005).
+RELEASE = _read_release()
 
 # WORKER_NAME is the admin-defined routing identity (it must match the
 # enrollment name) and is SHARED across every instance of this worker — so it is
@@ -21,13 +36,27 @@ VERSION = "1"
 WORKER_NAME = os.getenv("CAIRN_WORKER_NAME", "garmin-fetcher")
 
 JOB_STREAM = "CAIRN_JOBS"
+CORE_INFO_KV = "cairn_core"
+
+
+def job_subject(job: str) -> str:
+    """This pool's subject for a job kind (core ADR 0006)."""
+    return f"cairn.jobs.{job}.{PROVIDER}.{WORKER_NAME}"
+
+
+# Pre-0.5 provider-only subjects, drained once after the upgrade. Remove in 0.6.
+def legacy_subject(job: str) -> str:
+    return f"cairn.jobs.{job}.{PROVIDER}"
+
+
+DISCOVER_SUBJECT = f"cairn.discover.{PROVIDER}.{WORKER_NAME}"
 RESULT_SUBJECT = f"cairn.results.fetch_source.{PROVIDER}"
 RESULT_METRICS = f"cairn.results.import_metrics.{PROVIDER}"
-SUBJ_FETCH = f"cairn.jobs.fetch_source.{PROVIDER}"
-SUBJ_METRICS = f"cairn.jobs.import_metrics.{PROVIDER}"
-SUBJ_PARSE_BLOB = f"cairn.jobs.parse_blob.{PROVIDER}"
-SUBJ_RECONCILE = f"cairn.jobs.reconcile.{PROVIDER}"
-SUBJ_GEAR = f"cairn.jobs.import_gear.{PROVIDER}"
+SUBJ_FETCH = job_subject("fetch_source")
+SUBJ_METRICS = job_subject("import_metrics")
+SUBJ_PARSE_BLOB = job_subject("parse_blob")
+SUBJ_RECONCILE = job_subject("reconcile")
+SUBJ_GEAR = job_subject("import_gear")
 RESULT_GEAR = f"cairn.results.import_gear.{PROVIDER}"
 # Reconcile results are account-suffixed so the server can attribute the
 # watermark: cairn.results.reconcile.garmin.<external_account_id>.

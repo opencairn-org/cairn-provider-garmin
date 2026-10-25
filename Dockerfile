@@ -20,6 +20,9 @@ COPY --from=deps /opt/venv /opt/venv
 # Worker package + the committed generated proto stubs it imports.
 COPY cairn_garmin ./cairn_garmin
 COPY proto /opt/cairn-proto
+# Release tag for the core compatibility check (core ADR 0005); CI passes the tag.
+ARG VERSION=docker
+RUN printf '%s\n' "$VERSION" > /app/cairn_garmin/RELEASE
 
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app \

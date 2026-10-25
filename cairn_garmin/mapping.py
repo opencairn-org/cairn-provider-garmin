@@ -188,7 +188,8 @@ def activity_stream(details: JSON, start_ms: int | None) -> a.ActivityStream | N
     if ts_idx is not None:
         metrics = _dedupe_timestamps(metrics, ts_idx)
 
-    cols: dict[str, list[Any]] = {c: [] for c in set(idx_to_col.values())}
+    # dict.fromkeys keeps descriptor order; a set made channel order vary per process.
+    cols: dict[str, list[Any]] = {c: [] for c in dict.fromkeys(idx_to_col.values())}
     times: list[float] = []
     for row in metrics:
         vals = row.get("metrics") or []
@@ -339,5 +340,30 @@ def metric_event(user_id: str, account_id: str, key: str, day_ms: int, value: fl
     return w.WorkerEvent(type=w.WORKER_EVENT_TYPE_METRIC, metric=im)
 
 
-def job_result(events: list[w.WorkerEvent], *, name: str, version: str, package: str) -> w.JobResult:
-    return w.JobResult(events=events, worker_name=name, worker_version=version, worker_package=package)
+def job_result(events: list[w.WorkerEvent], *, name: str, version: str, package: str, release: str = "") -> w.JobResult:
+    return w.JobResult(
+        events=events, worker_name=name, worker_version=version, worker_package=package, worker_release=release
+    )
+
+
+def parse_archive(env: JSON, *, user_id: str, account_id: str, ext_id: str, blob_id: str = "") -> list[w.WorkerEvent]:
+    """The parser proper: an archived envelope in, events out. Import and
+    re-parse both run it, so a re-parse reproduces the import. Its output is
+    pinned per parser version by tests/test_parser_golden.py.
+    """
+    act = env.get("activity") or {}
+    details = env.get("details")
+    gear = env.get("gear") or []  # absent before parser 1.2, None when not looked up
+    ref = w.ExternalRef(user_id=user_id, provider="garmin", external_account_id=account_id, external_id=str(ext_id))
+    imported = w.ImportedActivity(ref=ref, payload=activity_payload(act))
+    if details:
+        stream = activity_stream(details, start_ms(act))
+        if stream is not None:
+            imported.stream.CopyFrom(stream)
+    apply_activity_gear(imported.payload, gear)
+    if blob_id:
+        imported.raw_blob_id = blob_id
+    # GEAR events precede the activity that references them.
+    events = [gear_event(user_id, account_id, rec) for rec in gear if rec.get("uuid")]
+    events.append(w.WorkerEvent(type=w.WORKER_EVENT_TYPE_ACTIVITY, activity=imported))
+    return events

@@ -22,7 +22,6 @@ from . import config as C
 
 log = logging.getLogger("cairn.garmin")
 
-ARCHIVE_VERSION = 1
 PRESIGN_SUBJECT = f"cairn.blobs.presign_upload.{C.PROVIDER}"
 
 
@@ -32,23 +31,30 @@ class ResultRef(TypedDict):
     sha256: str
 
 
-async def archive(
-    nc: NATS, user_id: str, source_id: str, activity: dict[str, Any], details: dict[str, Any] | None
-) -> tuple[str | None, int]:
-    body = json.dumps(
-        {
-            "version": ARCHIVE_VERSION,
-            "provenance": {
-                "provider": C.PROVIDER,
-                "worker_name": C.WORKER_NAME,
-                "worker_version": C.VERSION,
-                "package": C.PACKAGE,
-                "archived_at": datetime.now(UTC).isoformat(),
-            },
-            "activity": activity,
-            "details": details,
-        }
-    ).encode()
+def envelope(
+    activity: dict[str, Any], details: dict[str, Any] | None, gear: list[dict[str, Any]] | None
+) -> dict[str, Any]:
+    """The archived envelope: every input the parser reads (core ADR 0005).
+    gear is None when the per-activity lookup was skipped or failed, [] when
+    Garmin recorded none; archives of parser <= 1.1 have no "gear" key.
+    """
+    return {
+        "version": C.DATASET_VERSION,
+        "provenance": {
+            "provider": C.PROVIDER,
+            "worker_name": C.WORKER_NAME,
+            "worker_version": C.VERSION,
+            "package": C.PACKAGE,
+            "archived_at": datetime.now(UTC).isoformat(),
+        },
+        "activity": activity,
+        "details": details,
+        "gear": gear,
+    }
+
+
+async def archive(nc: NATS, user_id: str, source_id: str, env: dict[str, Any]) -> tuple[str | None, int]:
+    body = json.dumps(env).encode()
 
     try:
         reply = await nc.request(

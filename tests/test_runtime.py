@@ -12,7 +12,7 @@ import cairn_garmin  # noqa: F401 (proto path bootstrap)
 from cairn.v1 import activity_pb2 as a
 from cairn.v1 import gear_pb2 as g
 from cairn.worker.v1 import worker_service_pb2 as w
-from cairn_garmin import archive, runtime
+from cairn_garmin import archive, mapping, runtime
 from cairn_garmin import config as C
 from cairn_garmin.archive import ResultRef
 from tests.fakes import FakeJS, FakeKV, FakeMsg, FakeNC, FakePullSub, make_worker
@@ -233,7 +233,7 @@ def test_parse_blob_remaps_archived_envelope(uploads: list[bytes], monkeypatch: 
     client = FakeClient()
 
     async def fake_fetch(nc: object, url: str, fallback: str) -> dict[str, Any]:
-        return {"activity": client.get_activity("7"), "details": client.get_activity_details("7")}
+        return {"version": 1, "activity": client.get_activity("7"), "details": client.get_activity_details("7")}
 
     monkeypatch.setattr(archive, "fetch", fake_fetch)
     wk, _ = make_worker()
@@ -311,3 +311,88 @@ def test_unconnected_worker_refuses_io() -> None:
         _ = wk._nats
     with pytest.raises(RuntimeError, match="JetStream"):
         _ = wk._js
+
+
+def test_fetch_source_archives_what_it_parsed(uploads: list[bytes], monkeypatch: pytest.MonkeyPatch) -> None:
+    archived: list[dict[str, Any]] = []
+
+    async def capture(nc: object, user_id: str, source_id: str, env: dict[str, Any]) -> tuple[str | None, int]:
+        archived.append(env)
+        return "raw/7.json", 99
+
+    monkeypatch.setattr(archive, "archive", capture)
+    wk, _ = make_worker(FakeClient())
+    asyncio.run(wk._handle_fetch_source(json.dumps({"account_id": "acc-1", "user_id": "u1", "ext_id": "7"}).encode()))
+    (env,) = archived
+    assert env["version"] == C.DATASET_VERSION
+    assert env["gear"] == [GEAR_BIKE]
+    # Re-parsing the archive reproduces the import.
+    reparsed = mapping.parse_archive(env, user_id="u1", account_id="acc-1", ext_id="7", blob_id="raw/7.json")
+    imported = json_format.Parse(uploads[0], w.JobResult()).events
+    # Blob metadata is the upload's, not parser output; core keeps it on re-parse.
+    imported[-1].activity.ClearField("raw_content_type")
+    imported[-1].activity.ClearField("raw_size_bytes")
+    assert [json_format.MessageToDict(e) for e in reparsed] == [json_format.MessageToDict(e) for e in imported]
+
+
+def test_parse_blob_reads_archived_gear(uploads: list[bytes], monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(nc: object, url: str, fallback: str) -> dict[str, Any]:
+        return {"version": 1, "activity": FakeClient().get_activity("7"), "gear": [GEAR_BIKE]}
+
+    monkeypatch.setattr(archive, "fetch", fake_fetch)
+    wk, _ = make_worker()
+    job = {"ext_id": "7", "user_id": "u1", "account_id": "acc-1", "blob": {"fallback_handle": "raw/7.json"}}
+    asyncio.run(wk._handle_parse_blob(json.dumps(job).encode()))
+    events = json_format.Parse(uploads[0], w.JobResult()).events
+    assert [e.type for e in events] == [w.WORKER_EVENT_TYPE_GEAR, w.WORKER_EVENT_TYPE_ACTIVITY]
+    assert events[1].activity.payload.gear_external_id == "aaaa-1"
+
+
+def test_parse_blob_version_guards(uploads: list[bytes], monkeypatch: pytest.MonkeyPatch) -> None:
+    async def future(nc: object, url: str, fallback: str) -> dict[str, Any]:
+        return {"version": C.DATASET_VERSION + 1, "activity": {}}
+
+    monkeypatch.setattr(archive, "fetch", future)
+    wk, _ = make_worker()
+    with pytest.raises(runtime.ParserTooOldError):
+        asyncio.run(wk._handle_parse_blob(json.dumps({"min_parser_version": "1.99"}).encode()))
+    with pytest.raises(runtime.TerminalJobError):
+        asyncio.run(wk._handle_parse_blob(json.dumps({"blob": {}}).encode()))
+    assert uploads == []
+
+
+@pytest.mark.parametrize(
+    ("own", "min_version", "ok"),
+    [
+        ("1.2", "", True),
+        ("1.2", "1", True),
+        ("1.2", "1.2", True),
+        ("1.2", "1.3", False),
+        ("2.0", "1.4", False),
+        ("1.2", "dev", False),
+        ("dev", "dev", True),
+    ],
+)
+def test_parser_allows(own: str, min_version: str, ok: bool) -> None:
+    assert runtime.parser_allows(own, min_version) is ok
+
+
+@pytest.mark.parametrize(
+    ("core", "worker", "ok"),
+    [
+        ("v0.5.0", "v0.5.3", True),
+        ("v0.5.2-3-gabc-dirty", "v0.5.0", True),
+        ("v0.5.0", "v0.4.9", False),
+        ("v1.5.0", "v0.5.0", False),
+        ("dev", "v0.4.0", True),
+        ("v0.5.0", "", True),
+    ],
+)
+def test_release_compatible(core: str, worker: str, ok: bool) -> None:
+    assert runtime.release_compatible(core, worker) is ok
+
+
+def test_result_subject_drops_the_pool() -> None:
+    assert runtime.result_subject("cairn.jobs.fetch_source.garmin.w1") == "cairn.results.fetch_source.garmin"
+    assert runtime.result_subject("cairn.jobs.fetch_source.garmin") == "cairn.results.fetch_source.garmin"
+    assert runtime.result_subject("other") == "other.result"

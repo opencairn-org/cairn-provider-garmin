@@ -32,7 +32,7 @@ from .manifest import manifest
 
 log = logging.getLogger("cairn.garmin")
 
-DISCOVER_SUBJECT = f"cairn.discover.{C.PROVIDER}"
+DISCOVER_SUBJECT = C.DISCOVER_SUBJECT
 CREDS_SUBJECT = "cairn.creds.garmin.get"
 PER_PAGE = 50
 
@@ -47,6 +47,7 @@ class Worker:
         self._stop = asyncio.Event()
         self._clients: dict[str, GarminClient] = {}  # account_id → client
         self._reconciled_at: dict[str, float] = {}  # account_id → loop time of last real reconcile
+        self._fatal: Exception | None = None  # set when core moves to an incompatible release
 
     @property
     def _nats(self) -> NATS:
@@ -80,15 +81,20 @@ class Worker:
 
     async def run(self) -> None:
         await self.connect()
+        await self._check_core_release()
         await self._nats.subscribe(DISCOVER_SUBJECT, cb=self._on_discover)
-        tasks = [
-            asyncio.create_task(self._heartbeat_loop()),
-            asyncio.create_task(self._consume(C.SUBJ_FETCH, "fetch", self._handle_fetch_source)),
-            asyncio.create_task(self._consume(C.SUBJ_METRICS, "metrics", self._handle_import_metrics)),
-            asyncio.create_task(self._consume(C.SUBJ_PARSE_BLOB, "parseblob", self._handle_parse_blob)),
-            asyncio.create_task(self._consume(C.SUBJ_RECONCILE, "reconcile", self._handle_reconcile)),
-            asyncio.create_task(self._consume(C.SUBJ_GEAR, "gear", self._handle_import_gear)),
+        jobs: list[tuple[str, str, Handler]] = [
+            ("fetch_source", "fetch", self._handle_fetch_source),
+            ("import_metrics", "metrics", self._handle_import_metrics),
+            ("parse_blob", "parseblob", self._handle_parse_blob),
+            ("reconcile", "reconcile", self._handle_reconcile),
+            ("import_gear", "gear", self._handle_import_gear),
         ]
+        tasks = [asyncio.create_task(self._heartbeat_loop())]
+        for job, suffix, handler in jobs:
+            tasks.append(asyncio.create_task(self._consume(C.job_subject(job), f"{C.WORKER_NAME}-{suffix}", handler)))
+            # Pre-0.5 subject with its old durable, drained once. Remove in 0.6.
+            tasks.append(asyncio.create_task(self._drain_legacy(C.legacy_subject(job), f"garmin-{suffix}", handler)))
         log.info(
             "serving %s; pulling %s, %s, %s, %s, %s",
             DISCOVER_SUBJECT,
@@ -103,6 +109,20 @@ class Worker:
             t.cancel()
         if self.nc:
             await self.nc.drain()
+        if self._fatal is not None:
+            raise self._fatal
+
+    async def _check_core_release(self) -> None:
+        """Refuse to run against a core of another major.minor (core ADR 0005)."""
+        try:
+            kv = await self._js.key_value(C.CORE_INFO_KV)
+            entry = await kv.get("info")
+            core = json.loads(entry.value or b"{}").get("release", "")
+        except Exception as e:  # noqa: BLE001 — older core or not yet published
+            log.debug("core info unavailable: %s", e)
+            return
+        if not release_compatible(core, C.RELEASE):
+            raise IncompatibleCoreError(f"core {core}, worker {C.RELEASE}: major.minor must match")
 
     def stop(self) -> None:
         self._stop.set()
@@ -141,6 +161,7 @@ class Worker:
                 "worker_key": self.worker_key,
                 "instance_id": self.cfg.instance_id,
                 "version": C.VERSION,
+                "release": C.RELEASE,
                 "provider": C.PROVIDER,
                 "package": C.PACKAGE,
                 "webhooks": False,
@@ -151,6 +172,13 @@ class Worker:
                 await kv.put(key, json.dumps(payload).encode())
             except Exception as e:  # noqa: BLE001
                 log.debug("heartbeat failed: %s", e)
+            # Core upgraded underneath us: stop instead of mis-parsing.
+            try:
+                await self._check_core_release()
+            except IncompatibleCoreError as e:
+                self._fatal = e
+                self._stop.set()
+                return
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stop.wait(), timeout=self.cfg.heartbeat_interval_s)
 
@@ -201,8 +229,14 @@ class Worker:
                 await asyncio.sleep(self.ACK_EXTEND_S)
                 await m.in_progress()
 
-    async def _consume(self, subject: str, suffix: str, handler: Handler) -> None:
-        psub = await self._js.pull_subscribe(subject, durable=f"garmin-{suffix}", stream=C.JOB_STREAM)
+    async def _drain_legacy(self, subject: str, durable: str, handler: Handler) -> None:
+        try:
+            await self._consume(subject, durable, handler)
+        except Exception as e:  # noqa: BLE001 — another pool may hold it (work queues allow one)
+            log.warning("legacy subject %s not drained: %s", subject, e)
+
+    async def _consume(self, subject: str, durable: str, handler: Handler) -> None:
+        psub = await self._js.pull_subscribe(subject, durable=durable, stream=C.JOB_STREAM)
         while not self._stop.is_set():
             try:
                 msgs = await psub.fetch(self.cfg.pull_batch, timeout=5)
@@ -220,6 +254,10 @@ class Worker:
                 try:
                     await handler(m.data)
                     await m.ack()
+                except TerminalJobError as e:
+                    log.error("handler error on %s (terminal): %s", subject, e)
+                    await self._publish_failure(subject, m.data, e)
+                    await m.term()
                 except Exception as e:  # noqa: BLE001
                     deliveries = m.metadata.num_delivered or 1
                     if deliveries >= self.MAX_DELIVERIES:
@@ -250,6 +288,7 @@ class Worker:
             worker_name=jr.worker_name,
             worker_version=jr.worker_version,
             worker_package=jr.worker_package,
+            worker_release=jr.worker_release,
             more_available=jr.more_available,
         )
         if jr.HasField("new_watermark"):
@@ -272,7 +311,9 @@ class Worker:
         ext_id = str(job.get("ext_id") or "")
         if not ext_id:
             return
-        jr = w.JobResult(worker_name=C.WORKER_NAME, worker_version=C.VERSION, worker_package=C.PACKAGE)
+        jr = w.JobResult(
+            worker_name=C.WORKER_NAME, worker_version=C.VERSION, worker_package=C.PACKAGE, worker_release=C.RELEASE
+        )
         setattr(jr.error, "class", w.ERROR_CLASS_WORKER_BUG)
         jr.error.code = type(err).__name__
         jr.error.message = str(err)[:500]
@@ -280,7 +321,7 @@ class Worker:
         jr.failed_ref.provider = C.PROVIDER
         jr.failed_ref.external_account_id = str(job.get("account_id") or "")
         jr.failed_ref.external_id = ext_id
-        subject = job_subject.replace("cairn.jobs.", "cairn.results.", 1)
+        subject = result_subject(job_subject)
         try:
             await self._js.publish(subject, json_format.MessageToJson(jr).encode())
         except Exception as e:  # noqa: BLE001
@@ -296,47 +337,39 @@ class Worker:
         client = await self._client_for(account_id)
         act = await asyncio.to_thread(client.get_activity, ext_id)
 
-        stream = None
         details = None
         if job.get("fetch_streams"):
             details = await asyncio.to_thread(client.get_activity_details, ext_id)
-            stream = mapping.activity_stream(details, mapping.start_ms(act))
-
-        ref = w.ExternalRef(
-            user_id=user_id,
-            provider=C.PROVIDER,
-            external_account_id=account_id,
-            external_id=str(ext_id),
-        )
-        imported = w.ImportedActivity(ref=ref, payload=mapping.activity_payload(act))
-        if stream is not None:
-            imported.stream.CopyFrom(stream)
-        # Gear is optional data: one extra call, never fails the import. The
-        # GEAR events precede the activity that references them.
+        # Gear is optional data: one extra call, never fails the import.
         gear = await self._activity_gear(client, str(ext_id))
-        mapping.apply_activity_gear(imported.payload, gear)
-        events = [mapping.gear_event(user_id, account_id, rec) for rec in gear if rec.get("uuid")]
 
-        # Archive the raw response (best-effort) so it's viewable + re-parseable.
-        blob_id, blob_size = await archive.archive(self._nats, user_id, str(ext_id), act, details)
+        # The archive holds every parser input, so a re-parse reproduces this
+        # import (core ADR 0005). Archiving is best-effort.
+        env = archive.envelope(act, details, gear)
+        blob_id, blob_size = await archive.archive(self._nats, user_id, str(ext_id), env)
+        events = mapping.parse_archive(
+            env, user_id=user_id, account_id=account_id, ext_id=str(ext_id), blob_id=blob_id or ""
+        )
         if blob_id:
-            imported.raw_blob_id = blob_id
+            imported = events[-1].activity
             imported.raw_content_type = "application/json"
             imported.raw_size_bytes = blob_size
 
-        events.append(w.WorkerEvent(type=w.WORKER_EVENT_TYPE_ACTIVITY, activity=imported))
-        jr = mapping.job_result(events, name=C.WORKER_NAME, version=C.VERSION, package=C.PACKAGE)
-        await self._publish_result(C.RESULT_SUBJECT, jr)
+        await self._publish_result(C.RESULT_SUBJECT, self._job_result(events))
         log.info("published activity %s for user %s", ext_id, job.get("user_id"))
 
-    async def _activity_gear(self, client: GarminClient, ext_id: str) -> list[dict[str, Any]]:
+    async def _activity_gear(self, client: GarminClient, ext_id: str) -> list[dict[str, Any]] | None:
+        """None when not looked up (disabled or failed), so the archive says so."""
         if not self.cfg.fetch_activity_gear:
-            return []
+            return None
         try:
             return await asyncio.to_thread(client.activity_gear, ext_id)
         except Exception as e:  # noqa: BLE001 — gear is optional
             log.warning("activity gear lookup failed for %s: %s", ext_id, e)
-            return []
+            return None
+
+    def _job_result(self, events: list[w.WorkerEvent]) -> w.JobResult:
+        return mapping.job_result(events, name=C.WORKER_NAME, version=C.VERSION, package=C.PACKAGE, release=C.RELEASE)
 
     async def _handle_import_gear(self, body: bytes) -> None:
         job = json.loads(body)
@@ -357,8 +390,7 @@ class Worker:
         if not events:
             log.info("no gear on account %s", account_id)
             return
-        jr = mapping.job_result(events, name=C.WORKER_NAME, version=C.VERSION, package=C.PACKAGE)
-        await self._publish_result(C.RESULT_GEAR, jr)
+        await self._publish_result(C.RESULT_GEAR, self._job_result(events))
         log.info("published %d gear for user %s", len(events), user_id)
 
     async def _handle_parse_blob(self, body: bytes) -> None:
@@ -367,31 +399,25 @@ class Worker:
         the server's ingest finds the existing source and replaces the payload.
         """
         job = json.loads(body)
+        # Rolling upgrade: leave it to a newer instance of the pool.
+        min_parser = job.get("min_parser_version", "")
+        if not parser_allows(C.VERSION, min_parser):
+            raise ParserTooOldError(f"source parsed by {min_parser}, this parser is {C.VERSION}")
         blob = job.get("blob") or {}
         ext_id = job.get("ext_id", "")
         fallback = blob.get("fallback_handle", "")
 
         env = await archive.fetch(self._nats, blob.get("url", ""), fallback)
-        act = env.get("activity") or {}
-        details = env.get("details")
-
-        ref = w.ExternalRef(
+        if env.get("version") != C.DATASET_VERSION:
+            raise TerminalJobError(f"archive dataset {env.get('version')}, parser reads {C.DATASET_VERSION}")
+        events = mapping.parse_archive(
+            env,
             user_id=job.get("user_id", ""),
-            provider=C.PROVIDER,
-            external_account_id=job.get("account_id", ""),
-            external_id=str(ext_id),
+            account_id=job.get("account_id", ""),
+            ext_id=str(ext_id),
+            blob_id=fallback,
         )
-        imported = w.ImportedActivity(ref=ref, payload=mapping.activity_payload(act))
-        if details:
-            stream = mapping.activity_stream(details, mapping.start_ms(act))
-            if stream is not None:
-                imported.stream.CopyFrom(stream)
-        if fallback:
-            imported.raw_blob_id = fallback  # keep the archive reference stable
-
-        event = w.WorkerEvent(type=w.WORKER_EVENT_TYPE_ACTIVITY, activity=imported)
-        jr = mapping.job_result([event], name=C.WORKER_NAME, version=C.VERSION, package=C.PACKAGE)
-        await self._publish_result(C.RESULT_SUBJECT, jr)
+        await self._publish_result(C.RESULT_SUBJECT, self._job_result(events))
         log.info("re-parsed activity %s for user %s", ext_id, job.get("user_id"))
 
     # --- reconcile (pull): catch new activity since the watermark ---
@@ -431,7 +457,7 @@ class Worker:
         # The result MUST be published even when nothing new was found —
         # advancing last_sync_at is what stops the scheduler from re-polling
         # the account every tick. Account-suffixed subject for attribution.
-        jr = w.JobResult(worker_name=C.WORKER_NAME, worker_version=C.VERSION, worker_package=C.PACKAGE)
+        jr = self._job_result([])
         if high_water is not None:
             jr.new_watermark.FromDatetime(high_water)
         await self._js.publish(
@@ -514,8 +540,7 @@ class Worker:
 
         if not events:
             return
-        jr = mapping.job_result(events, name=C.WORKER_NAME, version=C.VERSION, package=C.PACKAGE)
-        await self._publish_result(C.RESULT_METRICS, jr)
+        await self._publish_result(C.RESULT_METRICS, self._job_result(events))
         log.info("published %d health metrics for user %s", len(events), user_id)
 
 
@@ -534,3 +559,58 @@ def _activity_time(act: dict[str, Any]) -> str:
     if ms:
         return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()
     return ""
+
+
+class TerminalJobError(Exception):
+    """A job no retry can fix: fail it at once."""
+
+
+class ParserTooOldError(Exception):
+    """The source was parsed by a newer parser; another pool instance takes it."""
+
+
+class IncompatibleCoreError(RuntimeError):
+    """Core runs another release major.minor than this worker."""
+
+
+def result_subject(job_subject: str) -> str:
+    """Results are provider-scoped: the pool token is dropped
+    (cairn.jobs.fetch_source.garmin.w1 → cairn.results.fetch_source.garmin).
+    """
+    parts = job_subject.split(".")
+    if len(parts) >= 4 and parts[:2] == ["cairn", "jobs"]:
+        return ".".join(["cairn", "results", parts[2], parts[3]])
+    return job_subject + ".result"
+
+
+def _major_minor(v: str) -> tuple[int, int] | None:
+    parts = v.removeprefix("v").split("-", 1)[0].split(".")
+    if not v.startswith("v") or len(parts) < 2 or not all(p.isdigit() for p in parts[:2]):
+        return None
+    return int(parts[0]), int(parts[1])
+
+
+def release_compatible(core: str, worker: str) -> bool:
+    """Same major.minor; an untagged build on either side is exempt (core ADR 0005)."""
+    c, wv = _major_minor(core), _major_minor(worker)
+    return c is None or wv is None or c == wv
+
+
+def _parser_version(v: str) -> tuple[int, int] | None:
+    major, _, minor = v.strip().partition(".")
+    if not major.isdigit() or (minor and not minor.isdigit()):
+        return None
+    return int(major), int(minor or 0)
+
+
+def parser_allows(own: str, min_version: str) -> bool:
+    """Parser own may re-parse a source last parsed by min_version: same
+    dataset, own not older (core ADR 0005). Legacy "N" reads as N.0.
+    """
+    if not min_version:
+        return True
+    m = _parser_version(min_version)
+    if m is None:
+        return own == min_version
+    o = _parser_version(own)
+    return o is not None and o[0] == m[0] and o[1] >= m[1]

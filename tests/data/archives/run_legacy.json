@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provenance": {"provider": "garmin", "worker_name": "garmin-fetcher", "worker_version": "1", "package": "cairn.workers.garmin", "archived_at": "2026-07-04T13:40:34+00:00"},
+  "activity": {
+    "activityId": 2000002,
+    "activityName": "Synthetic run, archived before gear",
+    "activityTypeDTO": {"typeKey": "running"},
+    "summaryDTO": {"startTimeGMT": "2026-06-01T06:00:00.0", "distance": 5000.0, "duration": 1800.0, "movingDuration": 1750.0, "averageHR": 150.0}
+  },
+  "details": null
+}

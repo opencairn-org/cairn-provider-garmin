@@ -40,12 +40,11 @@ BUCKETS = ["cairn_worker_presence", "cairn_worker_manifests", "cairn_rate_limits
 TOKEN, BAD_TOKEN = "enroll-garmin", "wrong"
 
 
-def standard_template(p: str, wk: str) -> tuple[list[str], list[str]]:
-    """Mirror of cairn-core domain.StandardPermissionTemplate(p, wk); keep in sync."""
-    jobs = [
-        f"cairn.jobs.{t}.{p}"
-        for t in ("fetch_source", "parse_blob", "backfill", "reconcile", "import_metrics", "import_gear")
-    ]
+def standard_template(p: str, name: str) -> tuple[list[str], list[str]]:
+    """Mirror of cairn-core domain.StandardPermissionTemplate(p, name); keep in sync."""
+    wk = f"{name}-{p}"
+    kinds = ("fetch_source", "parse_blob", "backfill", "reconcile", "import_metrics", "import_gear")
+    jobs = [f"cairn.jobs.{t}.{p}.{name}" for t in kinds] + [f"cairn.jobs.{t}.{p}" for t in kinds]  # + legacy drain
     webhook = f"cairn.webhooks.{wk}.event"
     js = ["$JS.API.STREAM.NAMES"]
     js += [f"$JS.API.CONSUMER.CREATE.{JOB_STREAM}.*.{f}" for f in jobs]
@@ -55,6 +54,11 @@ def standard_template(p: str, wk: str) -> tuple[list[str], list[str]]:
     for b in BUCKETS:
         js += [f"$JS.API.STREAM.INFO.KV_{b}", f"$JS.API.DIRECT.GET.KV_{b}.>", f"$JS.API.STREAM.MSG.GET.KV_{b}"]
         js += [f"$KV.{b}.>"]
+    js += [
+        "$JS.API.STREAM.INFO.KV_cairn_core",
+        "$JS.API.DIRECT.GET.KV_cairn_core.>",
+        "$JS.API.STREAM.MSG.GET.KV_cairn_core",
+    ]
     publish = [
         f"cairn.results.fetch_source.{p}",
         f"cairn.results.parse_blob.{p}",
@@ -62,7 +66,7 @@ def standard_template(p: str, wk: str) -> tuple[list[str], list[str]]:
         f"cairn.results.reconcile.{p}.*",
         f"cairn.results.import_metrics.{p}",
         f"cairn.results.import_gear.{p}",
-        f"cairn.jobs.fetch_source.{p}",
+        f"cairn.jobs.fetch_source.{p}.{name}",
         f"cairn.workers.{wk}.>",
         f"cairn.tokens.{p}.>",
         f"cairn.creds.{p}.get",
@@ -72,7 +76,13 @@ def standard_template(p: str, wk: str) -> tuple[list[str], list[str]]:
         "_INBOX.>",
         *js,
     ]
-    subscribe = [*jobs, f"cairn.cmd.worker.{wk}.>", f"cairn.discover.{p}", webhook, f"cairn.webhooks.{wk}.verify"]
+    subscribe = [
+        *jobs,
+        f"cairn.cmd.worker.{wk}.>",
+        f"cairn.discover.{p}.{name}",
+        webhook,
+        f"cairn.webhooks.{wk}.verify",
+    ]
     return publish, [*subscribe, "_INBOX.>"]
 
 
@@ -109,7 +119,7 @@ def _account_kp() -> nkeys.KeyPair:
 
 @pytest.fixture(params=["static", "callout"])
 def env(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Env]:
-    publish, subscribe = standard_template(PROVIDER, WORKER_KEY)
+    publish, subscribe = standard_template(PROVIDER, C.WORKER_NAME)
     port = _free_port()
     conf: dict[str, Any] = {"host": "127.0.0.1", "port": port, "jetstream": {"store_dir": str(tmp_path / "js")}}
     if request.param == "static":
@@ -165,7 +175,7 @@ async def _serve_callout(nc: NATS, e: Env) -> None:
     """Stand-in for core's AuthCalloutSubscriber: admit TOKEN as the garmin enrollment."""
     kp = e.account_kp
     assert kp is not None
-    publish, subscribe = standard_template(PROVIDER, WORKER_KEY)
+    publish, subscribe = standard_template(PROVIDER, C.WORKER_NAME)
 
     async def on_auth(m: Msg) -> None:
         req = _decode(m.data.decode())["nats"]
@@ -282,7 +292,10 @@ async def _admin(e: Env, blob_url: str) -> tuple[NATS, list[str], list[bytes]]:
     async def presign(m: Msg) -> None:
         nonlocal n
         n += 1
-        await m.respond(json.dumps({"url": f"{blob_url}/b{n}", "blob_id": f"b{n}"}).encode())
+        req = json.loads(m.data)
+        # Archives are named by source, so a test can address one whatever the upload order.
+        name = f"archive-{req['source_id']}" if req.get("kind") != "result" else f"b{n}"
+        await m.respond(json.dumps({"url": f"{blob_url}/{name}", "blob_id": name}).encode())
 
     async def presign_download(m: Msg) -> None:
         await m.respond(json.dumps({"url": f"{blob_url}/{json.loads(m.data)['blob_id']}"}).encode())
@@ -315,7 +328,9 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
 
         async def consumers_ready() -> bool:
             names = {c.name for c in await ajs.consumers_info(JOB_STREAM)}
-            return names >= {f"garmin-{s}" for s in ("fetch", "metrics", "parseblob", "reconcile")}
+            pools = {f"{C.WORKER_NAME}-{s}" for s in ("fetch", "metrics", "parseblob", "reconcile")}
+            legacy = {f"garmin-{s}" for s in ("fetch", "metrics", "parseblob", "reconcile")}
+            return names >= pools | legacy
 
         await _until(consumers_ready, "durable consumers")
         presence = await ajs.key_value("cairn_worker_presence")
@@ -329,18 +344,16 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
 
         await _until(heartbeat, "presence heartbeat")
 
-        reply = await admin.request(f"cairn.discover.{PROVIDER}", json.dumps({"account_id": ACCOUNT}).encode(), 5)
+        reply = await admin.request(C.DISCOVER_SUBJECT, json.dumps({"account_id": ACCOUNT}).encode(), 5)
         assert json.loads(reply.data)["items"][0]["external_id"] == "7"
         assert await wk._fetch_creds(ACCOUNT) == ("e@x", "pw")
 
         job = {"job_id": "j1", "account_id": ACCOUNT, "user_id": "u1", "provider": PROVIDER}
         # reconcile enqueues fetch_source for activity 7, whose result is claim-checked.
-        await ajs.publish(f"cairn.jobs.reconcile.{PROVIDER}", json.dumps(job).encode())
+        await ajs.publish(C.SUBJ_RECONCILE, json.dumps(job).encode())
         now = int(time.time())
-        await ajs.publish(
-            f"cairn.jobs.import_metrics.{PROVIDER}", json.dumps({**job, "since_unix": now, "until_unix": now}).encode()
-        )
-        await ajs.publish(f"cairn.jobs.fetch_source.{PROVIDER}", json.dumps(job).encode())  # no ext_id → term
+        await ajs.publish(C.SUBJ_METRICS, json.dumps({**job, "since_unix": now, "until_unix": now}).encode())
+        await ajs.publish(C.SUBJ_FETCH, json.dumps(job).encode())  # no ext_id → term
 
         async def all_results() -> bool:
             return {
@@ -351,16 +364,23 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
 
         await _until(all_results, "results")
 
-        # parse_blob re-presigns the archived blob from its handle (the first upload).
-        blob = {"url": "", "fallback_handle": "b1"}
-        await ajs.publish(
-            f"cairn.jobs.parse_blob.{PROVIDER}", json.dumps({**job, "ext_id": "7", "blob": blob}).encode()
-        )
+        # parse_blob re-presigns the archived blob from its handle.
+        blob = {"url": "", "fallback_handle": "archive-7"}
+        await ajs.publish(C.SUBJ_PARSE_BLOB, json.dumps({**job, "ext_id": "7", "blob": blob}).encode())
 
         async def reparsed() -> bool:
             return results.count(f"cairn.results.fetch_source.{PROVIDER}") >= 2
 
         await _until(reparsed, "parse_blob result")
+
+        # A job queued on the pre-0.5 subject is still drained.
+        metrics = {**job, "since_unix": now, "until_unix": now}
+        await ajs.publish(C.legacy_subject("import_metrics"), json.dumps(metrics).encode())
+
+        async def legacy_drained() -> bool:
+            return results.count(f"cairn.results.import_metrics.{PROVIDER}") >= 2
+
+        await _until(legacy_drained, "legacy subject result")
 
         async def drained() -> bool:
             return (await ajs.stream_info(JOB_STREAM)).state.messages == 0

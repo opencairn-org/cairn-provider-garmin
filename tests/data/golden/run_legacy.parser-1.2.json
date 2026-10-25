@@ -1,0 +1,29 @@
+[
+  {
+    "activity": {
+      "payload": {
+        "discipline": "DISCIPLINE_RUN_ROAD",
+        "elapsedDuration": "1800s",
+        "endTime": "2026-06-01T06:30:00Z",
+        "movingDuration": "1750s",
+        "providerNativeType": "running",
+        "startTime": "2026-06-01T06:00:00Z",
+        "summary": {
+          "avgHeartRateBpm": 150,
+          "distanceM": 5000.0
+        },
+        "timezone": "UTC",
+        "title": "Synthetic run, archived before gear",
+        "type": "ACTIVITY_TYPE_RUN"
+      },
+      "rawBlobId": "blob-1",
+      "ref": {
+        "externalAccountId": "a1",
+        "externalId": "2000002",
+        "provider": "garmin",
+        "userId": "u1"
+      }
+    },
+    "type": "WORKER_EVENT_TYPE_ACTIVITY"
+  }
+]
