@@ -64,16 +64,12 @@ def standard_template(p: str, name: str) -> tuple[list[str], list[str]]:
         *[f"cairn.results.{t}.{p}.{name}" for t in results],
         f"cairn.results.reconcile.{p}.{name}.*",
         f"cairn.accounts.lookup.{p}.{name}",
-        # pre-0.5 provider-scoped results, kept through 0.5
-        *[f"cairn.results.{t}.{p}" for t in results],
-        f"cairn.results.reconcile.{p}.*",
         f"cairn.jobs.fetch_source.{p}.{name}",
         f"cairn.workers.{wk}.>",
         f"cairn.tokens.{p}.>",
         f"cairn.creds.{p}.get",
         f"cairn.blobs.presign_upload.{p}",
         f"cairn.blobs.presign_download.{p}",
-        "cairn.accounts.lookup_by_provider_ext",
         "_INBOX.>",
         *js,
     ]
