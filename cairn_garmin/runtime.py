@@ -215,6 +215,9 @@ class Worker:
     # is terminated after this many deliveries instead of NAK-looping forever.
     # The server's stale-queue reaper then fails the import-queue item.
     MAX_DELIVERIES = 5
+    # Re-parse jobs handed back as parser_too_old: give a newer instance about
+    # 35 minutes to join the pool before telling core.
+    PARSER_TOO_OLD_ATTEMPTS = 10
     # How long a failed job waits before redelivery — keeps a failing
     # activity from hot-looping against the Garmin API.
     NAK_DELAY_S = 60
@@ -258,6 +261,16 @@ class Worker:
                     log.error("handler error on %s (terminal): %s", subject, e)
                     await self._publish_failure(subject, m.data, e)
                     await m.term()
+                except ParserTooOldError as e:
+                    # Rolling upgrade: a newer instance of the pool takes it. Does
+                    # not count as a failure until the back-off window is over.
+                    deliveries = m.metadata.num_delivered or 1
+                    if deliveries >= self.PARSER_TOO_OLD_ATTEMPTS:
+                        log.error("handler error on %s (parser too old, giving up): %s", subject, e)
+                        await self._publish_failure(subject, m.data, e)
+                        await m.term()
+                    else:
+                        await m.nak(delay=min(30 * 2 ** (deliveries - 1), 600))
                 except Exception as e:  # noqa: BLE001
                     deliveries = m.metadata.num_delivered or 1
                     if deliveries >= self.MAX_DELIVERIES:
@@ -315,7 +328,7 @@ class Worker:
             worker_name=C.WORKER_NAME, worker_version=C.VERSION, worker_package=C.PACKAGE, worker_release=C.RELEASE
         )
         setattr(jr.error, "class", w.ERROR_CLASS_WORKER_BUG)
-        jr.error.code = type(err).__name__
+        jr.error.code = getattr(err, "code", type(err).__name__)
         jr.error.message = str(err)[:500]
         jr.failed_ref.user_id = str(job.get("user_id") or "")
         jr.failed_ref.provider = C.PROVIDER
@@ -568,18 +581,19 @@ class TerminalJobError(Exception):
 class ParserTooOldError(Exception):
     """The source was parsed by a newer parser; another pool instance takes it."""
 
+    code = "parser_too_old"
+
 
 class IncompatibleCoreError(RuntimeError):
     """Core runs another release major.minor than this worker."""
 
 
 def result_subject(job_subject: str) -> str:
-    """Results are provider-scoped: the pool token is dropped
-    (cairn.jobs.fetch_source.garmin.w1 → cairn.results.fetch_source.garmin).
+    """Results are per pool (core ADR 0006): the pool token stays
+    (cairn.jobs.fetch_source.garmin.w1 → cairn.results.fetch_source.garmin.w1).
     """
-    parts = job_subject.split(".")
-    if len(parts) >= 4 and parts[:2] == ["cairn", "jobs"]:
-        return ".".join(["cairn", "results", parts[2], parts[3]])
+    if job_subject.startswith("cairn.jobs."):
+        return "cairn.results." + job_subject.removeprefix("cairn.jobs.")
     return job_subject + ".result"
 
 
@@ -591,9 +605,17 @@ def _major_minor(v: str) -> tuple[int, int] | None:
 
 
 def release_compatible(core: str, worker: str) -> bool:
-    """Same major.minor; an untagged build on either side is exempt (core ADR 0005)."""
+    """Core ADR 0005: before 1.0 both share major.minor; from 1.0 on, same major
+    and the worker's minor not above core's. Untagged builds are exempt.
+    """
     c, wv = _major_minor(core), _major_minor(worker)
-    return c is None or wv is None or c == wv
+    if c is None or wv is None:
+        return True
+    if c[0] != wv[0]:
+        return False
+    if c[0] == 0:
+        return c[1] == wv[1]
+    return wv[1] <= c[1]
 
 
 def _parser_version(v: str) -> tuple[int, int] | None:

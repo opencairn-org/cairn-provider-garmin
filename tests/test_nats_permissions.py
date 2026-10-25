@@ -59,13 +59,14 @@ def standard_template(p: str, name: str) -> tuple[list[str], list[str]]:
         "$JS.API.DIRECT.GET.KV_cairn_core.>",
         "$JS.API.STREAM.MSG.GET.KV_cairn_core",
     ]
+    results = ("fetch_source", "parse_blob", "backfill", "import_metrics", "import_gear")
     publish = [
-        f"cairn.results.fetch_source.{p}",
-        f"cairn.results.parse_blob.{p}",
-        f"cairn.results.backfill.{p}",
+        *[f"cairn.results.{t}.{p}.{name}" for t in results],
+        f"cairn.results.reconcile.{p}.{name}.*",
+        f"cairn.accounts.lookup.{p}.{name}",
+        # pre-0.5 provider-scoped results, kept through 0.5
+        *[f"cairn.results.{t}.{p}" for t in results],
         f"cairn.results.reconcile.{p}.*",
-        f"cairn.results.import_metrics.{p}",
-        f"cairn.results.import_gear.{p}",
         f"cairn.jobs.fetch_source.{p}.{name}",
         f"cairn.workers.{wk}.>",
         f"cairn.tokens.{p}.>",
@@ -357,9 +358,9 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
 
         async def all_results() -> bool:
             return {
-                f"cairn.results.reconcile.{PROVIDER}.{ACCOUNT}",
-                f"cairn.results.fetch_source.{PROVIDER}",
-                f"cairn.results.import_metrics.{PROVIDER}",
+                f"cairn.results.reconcile.{PROVIDER}.{C.WORKER_NAME}.{ACCOUNT}",
+                f"cairn.results.fetch_source.{PROVIDER}.{C.WORKER_NAME}",
+                f"cairn.results.import_metrics.{PROVIDER}.{C.WORKER_NAME}",
             } <= set(results)
 
         await _until(all_results, "results")
@@ -369,7 +370,7 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
         await ajs.publish(C.SUBJ_PARSE_BLOB, json.dumps({**job, "ext_id": "7", "blob": blob}).encode())
 
         async def reparsed() -> bool:
-            return results.count(f"cairn.results.fetch_source.{PROVIDER}") >= 2
+            return results.count(f"cairn.results.fetch_source.{PROVIDER}.{C.WORKER_NAME}") >= 2
 
         await _until(reparsed, "parse_blob result")
 
@@ -378,7 +379,7 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
         await ajs.publish(C.legacy_subject("import_metrics"), json.dumps(metrics).encode())
 
         async def legacy_drained() -> bool:
-            return results.count(f"cairn.results.import_metrics.{PROVIDER}") >= 2
+            return results.count(f"cairn.results.import_metrics.{PROVIDER}.{C.WORKER_NAME}") >= 2
 
         await _until(legacy_drained, "legacy subject result")
 

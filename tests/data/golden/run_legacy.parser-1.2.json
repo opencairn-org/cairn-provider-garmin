@@ -5,6 +5,7 @@
         "discipline": "DISCIPLINE_RUN_ROAD",
         "elapsedDuration": "1800s",
         "endTime": "2026-06-01T06:30:00Z",
+        "gearUnknown": true,
         "movingDuration": "1750s",
         "providerNativeType": "running",
         "startTime": "2026-06-01T06:00:00Z",

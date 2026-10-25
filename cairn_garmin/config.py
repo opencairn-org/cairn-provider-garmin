@@ -50,17 +50,18 @@ def legacy_subject(job: str) -> str:
 
 
 DISCOVER_SUBJECT = f"cairn.discover.{PROVIDER}.{WORKER_NAME}"
-RESULT_SUBJECT = f"cairn.results.fetch_source.{PROVIDER}"
-RESULT_METRICS = f"cairn.results.import_metrics.{PROVIDER}"
+# Results are per pool (core ADR 0006): cairn.results.<job>.<provider>.<name>.
+RESULT_SUBJECT = f"cairn.results.fetch_source.{PROVIDER}.{WORKER_NAME}"
+RESULT_METRICS = f"cairn.results.import_metrics.{PROVIDER}.{WORKER_NAME}"
 SUBJ_FETCH = job_subject("fetch_source")
 SUBJ_METRICS = job_subject("import_metrics")
 SUBJ_PARSE_BLOB = job_subject("parse_blob")
 SUBJ_RECONCILE = job_subject("reconcile")
 SUBJ_GEAR = job_subject("import_gear")
-RESULT_GEAR = f"cairn.results.import_gear.{PROVIDER}"
+RESULT_GEAR = f"cairn.results.import_gear.{PROVIDER}.{WORKER_NAME}"
 # Reconcile results are account-suffixed so the server can attribute the
 # watermark: cairn.results.reconcile.garmin.<external_account_id>.
-RESULT_RECONCILE_PREFIX = f"cairn.results.reconcile.{PROVIDER}"
+RESULT_RECONCILE_PREFIX = f"cairn.results.reconcile.{PROVIDER}.{WORKER_NAME}"
 PRESIGN_DOWNLOAD_SUBJECT = f"cairn.blobs.presign_download.{PROVIDER}"
 PRESENCE_KV = "cairn_worker_presence"
 

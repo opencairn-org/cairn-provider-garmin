@@ -353,9 +353,14 @@ def parse_archive(env: JSON, *, user_id: str, account_id: str, ext_id: str, blob
     """
     act = env.get("activity") or {}
     details = env.get("details")
-    gear = env.get("gear") or []  # absent before parser 1.2, None when not looked up
+    # Absent (before parser 1.2) or None: the gear was not looked up, which is
+    # not "no gear"; core keeps a previous import's gear.
+    raw_gear = env.get("gear")
+    gear = raw_gear or []
     ref = w.ExternalRef(user_id=user_id, provider="garmin", external_account_id=account_id, external_id=str(ext_id))
     imported = w.ImportedActivity(ref=ref, payload=activity_payload(act))
+    if raw_gear is None:
+        imported.payload.gear_unknown = True
     if details:
         stream = activity_stream(details, start_ms(act))
         if stream is not None:

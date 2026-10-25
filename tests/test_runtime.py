@@ -383,7 +383,10 @@ def test_parser_allows(own: str, min_version: str, ok: bool) -> None:
         ("v0.5.0", "v0.5.3", True),
         ("v0.5.2-3-gabc-dirty", "v0.5.0", True),
         ("v0.5.0", "v0.4.9", False),
+        ("v0.5.0", "v0.6.0", False),
         ("v1.5.0", "v0.5.0", False),
+        ("v1.3.0", "v1.1.4", True),
+        ("v1.3.0", "v1.4.0", False),
         ("dev", "v0.4.0", True),
         ("v0.5.0", "", True),
     ],
@@ -392,7 +395,19 @@ def test_release_compatible(core: str, worker: str, ok: bool) -> None:
     assert runtime.release_compatible(core, worker) is ok
 
 
-def test_result_subject_drops_the_pool() -> None:
-    assert runtime.result_subject("cairn.jobs.fetch_source.garmin.w1") == "cairn.results.fetch_source.garmin"
+def test_result_subject_keeps_the_pool() -> None:
+    assert runtime.result_subject("cairn.jobs.fetch_source.garmin.w1") == "cairn.results.fetch_source.garmin.w1"
     assert runtime.result_subject("cairn.jobs.fetch_source.garmin") == "cairn.results.fetch_source.garmin"
     assert runtime.result_subject("other") == "other.result"
+
+
+def test_parse_archive_marks_gear_unknown_when_not_looked_up() -> None:
+    act = FakeClient().get_activity("7")
+    unknown = mapping.parse_archive(
+        {"version": 1, "activity": act, "gear": None}, user_id="u1", account_id="a1", ext_id="7"
+    )
+    legacy = mapping.parse_archive({"version": 1, "activity": act}, user_id="u1", account_id="a1", ext_id="7")
+    none = mapping.parse_archive({"version": 1, "activity": act, "gear": []}, user_id="u1", account_id="a1", ext_id="7")
+    assert unknown[-1].activity.payload.gear_unknown is True
+    assert legacy[-1].activity.payload.gear_unknown is True
+    assert none[-1].activity.payload.gear_unknown is False
