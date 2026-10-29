@@ -1,6 +1,6 @@
 [project]
 name = "cairn-provider-garmin"
-version = "0.5.0"
+version = "0.6.0"
 description = "Cairn worker that imports Garmin Connect activities and daily health metrics"
 readme = "README.md"
 license = "Apache-2.0"
