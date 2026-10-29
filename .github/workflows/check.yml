@@ -64,5 +64,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install   # version from .python-version
-      - run: uv sync --locked
+      - name: Locked Python tools, fleetlint and nats-server (pinned in uv.lock and the Makefile)
+        run: |
+          make tools
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: make mutate
