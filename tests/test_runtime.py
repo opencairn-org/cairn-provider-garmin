@@ -295,6 +295,22 @@ def test_consume_settles_each_message() -> None:
     assert failure.failed_ref.external_id == "9"
 
 
+def test_manifest_declares_provider_meta() -> None:
+    wk, js = make_worker()
+    js.kv = FakeKV(wk.stop)
+    asyncio.run(wk._publish_manifest())
+    ((key, payload),) = js.kv.puts
+    assert key == C.WORKER_NAME
+    assert payload["provider"] == C.PROVIDER
+    assert payload["package"] == C.PACKAGE
+    assert payload["version"] == C.VERSION
+    meta = payload["provider_meta"]
+    assert meta["auth_method"] == "credentials"
+    assert "oauth" not in meta
+    assert [f["key"] for f in meta["config_fields"]] == ["client_id", "client_secret"]
+    assert meta["config_fields"][1]["secret"] is True
+
+
 def test_heartbeat_publishes_presence() -> None:
     wk, js = make_worker()
     js.kv = FakeKV(wk.stop)
