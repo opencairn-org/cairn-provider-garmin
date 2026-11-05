@@ -44,11 +44,6 @@ def job_subject(job: str) -> str:
     return f"cairn.jobs.{job}.{PROVIDER}.{WORKER_NAME}"
 
 
-# Pre-0.5 provider-only subjects, drained once after the upgrade. Remove in 0.6.
-def legacy_subject(job: str) -> str:
-    return f"cairn.jobs.{job}.{PROVIDER}"
-
-
 DISCOVER_SUBJECT = f"cairn.discover.{PROVIDER}.{WORKER_NAME}"
 # Results are per pool (core ADR 0006): cairn.results.<job>.<provider>.<name>.
 RESULT_SUBJECT = f"cairn.results.fetch_source.{PROVIDER}.{WORKER_NAME}"
@@ -64,6 +59,9 @@ RESULT_GEAR = f"cairn.results.import_gear.{PROVIDER}.{WORKER_NAME}"
 RESULT_RECONCILE_PREFIX = f"cairn.results.reconcile.{PROVIDER}.{WORKER_NAME}"
 PRESIGN_DOWNLOAD_SUBJECT = f"cairn.blobs.presign_download.{PROVIDER}"
 PRESENCE_KV = "cairn_worker_presence"
+# The manifest (parser version + how Garmin is connected) lives here; core
+# stores its provider_meta and drives the connect form from it.
+MANIFEST_KV = "cairn_worker_manifests"
 
 
 @dataclass

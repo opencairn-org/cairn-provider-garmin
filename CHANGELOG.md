@@ -6,6 +6,22 @@ to follow [Semantic Versioning](https://semver.org/). Dates are ISO-8601.
 
 ## [Unreleased]
 
+Contract change: needs cairn-core 0.7 (docs/adr/0005).
+
+### Added
+- The worker publishes its manifest to the `cairn_worker_manifests` KV
+  (parser version plus `provider_meta`: display name, credential labels and
+  help text, activity link, setup docs); core builds the connect form from
+  it instead of knowing Garmin.
+
+### Changed
+- `cairn.creds.garmin.get` replies are read as `client_id`/`client_secret`
+  (core 0.7), with the `email`/`password` aliases as fallback.
+
+### Removed
+- The pre-0.5 drain of `cairn.jobs.<job>.garmin`; core 0.7 no longer grants
+  those subjects.
+
 ## [0.6.0] — 2026-10-29
 
 Released alongside cairn-core 0.6.0. The worker contract (`cairn.worker.v1`)

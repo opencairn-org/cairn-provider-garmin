@@ -44,7 +44,7 @@ def standard_template(p: str, name: str) -> tuple[list[str], list[str]]:
     """Mirror of cairn-core domain.StandardPermissionTemplate(p, name); keep in sync."""
     wk = f"{name}-{p}"
     kinds = ("fetch_source", "parse_blob", "backfill", "reconcile", "import_metrics", "import_gear")
-    jobs = [f"cairn.jobs.{t}.{p}.{name}" for t in kinds] + [f"cairn.jobs.{t}.{p}" for t in kinds]  # + legacy drain
+    jobs = [f"cairn.jobs.{t}.{p}.{name}" for t in kinds]
     webhook = f"cairn.webhooks.{wk}.event"
     js = ["$JS.API.STREAM.NAMES"]
     js += [f"$JS.API.CONSUMER.CREATE.{JOB_STREAM}.*.{f}" for f in jobs]
@@ -77,6 +77,7 @@ def standard_template(p: str, name: str) -> tuple[list[str], list[str]]:
         *jobs,
         f"cairn.cmd.worker.{wk}.>",
         f"cairn.discover.{p}.{name}",
+        f"cairn.oauth.{p}.{name}.exchange",
         webhook,
         f"cairn.webhooks.{wk}.verify",
     ]
@@ -326,8 +327,7 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
         async def consumers_ready() -> bool:
             names = {c.name for c in await ajs.consumers_info(JOB_STREAM)}
             pools = {f"{C.WORKER_NAME}-{s}" for s in ("fetch", "metrics", "parseblob", "reconcile")}
-            legacy = {f"garmin-{s}" for s in ("fetch", "metrics", "parseblob", "reconcile")}
-            return names >= pools | legacy
+            return names >= pools
 
         await _until(consumers_ready, "durable consumers")
         presence = await ajs.key_value("cairn_worker_presence")
@@ -369,15 +369,6 @@ def test_worker_runs_under_standard_template(env: Env, blob_url: str, caplog: py
             return results.count(f"cairn.results.fetch_source.{PROVIDER}.{C.WORKER_NAME}") >= 2
 
         await _until(reparsed, "parse_blob result")
-
-        # A job queued on the pre-0.5 subject is still drained.
-        metrics = {**job, "since_unix": now, "until_unix": now}
-        await ajs.publish(C.legacy_subject("import_metrics"), json.dumps(metrics).encode())
-
-        async def legacy_drained() -> bool:
-            return results.count(f"cairn.results.import_metrics.{PROVIDER}.{C.WORKER_NAME}") >= 2
-
-        await _until(legacy_drained, "legacy subject result")
 
         async def drained() -> bool:
             return (await ajs.stream_info(JOB_STREAM)).state.messages == 0

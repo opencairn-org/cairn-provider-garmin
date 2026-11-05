@@ -28,13 +28,15 @@ from cairn.worker.v1 import worker_service_pb2 as w
 from . import archive, mapping
 from . import config as C
 from .garmin_client import GarminClient
-from .manifest import manifest
+from .manifest import manifest, provider_meta
 
 log = logging.getLogger("cairn.garmin")
 
 DISCOVER_SUBJECT = C.DISCOVER_SUBJECT
-CREDS_SUBJECT = "cairn.creds.garmin.get"
+CREDS_SUBJECT = f"cairn.creds.{C.PROVIDER}.get"
 PER_PAGE = 50
+# The manifest KV has a 15 min TTL; core persists provider_meta on first sight.
+MANIFEST_INTERVAL_S = 600
 
 Handler = Callable[[bytes], Awaitable[None]]
 
@@ -90,11 +92,9 @@ class Worker:
             ("reconcile", "reconcile", self._handle_reconcile),
             ("import_gear", "gear", self._handle_import_gear),
         ]
-        tasks = [asyncio.create_task(self._heartbeat_loop())]
+        tasks = [asyncio.create_task(self._heartbeat_loop()), asyncio.create_task(self._manifest_loop())]
         for job, suffix, handler in jobs:
             tasks.append(asyncio.create_task(self._consume(C.job_subject(job), f"{C.WORKER_NAME}-{suffix}", handler)))
-            # Pre-0.5 subject with its old durable, drained once. Remove in 0.6.
-            tasks.append(asyncio.create_task(self._drain_legacy(C.legacy_subject(job), f"garmin-{suffix}", handler)))
         log.info(
             "serving %s; pulling %s, %s, %s, %s, %s",
             DISCOVER_SUBJECT,
@@ -142,8 +142,11 @@ class Worker:
             try:
                 resp = await self.nc.request(CREDS_SUBJECT, json.dumps({"account_id": account_id}).encode(), timeout=5)
                 data = json.loads(resp.data)
-                if not data.get("error") and data.get("email"):
-                    return data["email"], data.get("password", "")
+                # client_id/client_secret are the connection's credential slots;
+                # email/password are the aliases core <= 0.6 replied with.
+                login = data.get("client_id") or data.get("email")
+                if not data.get("error") and login:
+                    return login, data.get("client_secret") or data.get("password", "")
                 log.warning("creds rpc for %s: %s", account_id, data.get("error"))
             except Exception as e:  # noqa: BLE001
                 log.warning("creds rpc failed for %s: %s", account_id, e)
@@ -181,6 +184,30 @@ class Worker:
                 return
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stop.wait(), timeout=self.cfg.heartbeat_interval_s)
+
+    # --- manifest: parser version + provider meta, republished under the KV TTL ---
+    def _manifest_payload(self) -> dict[str, Any]:
+        return {
+            "worker_name": C.WORKER_NAME,
+            "version": C.VERSION,
+            "provider": C.PROVIDER,
+            "package": C.PACKAGE,
+            "updated_at": datetime.now(UTC).isoformat(),
+            "provider_meta": provider_meta(),
+        }
+
+    async def _publish_manifest(self) -> None:
+        kv = await self._js.key_value(C.MANIFEST_KV)
+        await kv.put(C.WORKER_NAME, json.dumps(self._manifest_payload()).encode())
+
+    async def _manifest_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                await self._publish_manifest()
+            except Exception as e:  # noqa: BLE001
+                log.warning("manifest publish failed: %s", e)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._stop.wait(), timeout=MANIFEST_INTERVAL_S)
 
     # --- discover (request/reply): list activities for a page ---
     async def _on_discover(self, msg: Msg) -> None:
@@ -231,12 +258,6 @@ class Worker:
             while True:
                 await asyncio.sleep(self.ACK_EXTEND_S)
                 await m.in_progress()
-
-    async def _drain_legacy(self, subject: str, durable: str, handler: Handler) -> None:
-        try:
-            await self._consume(subject, durable, handler)
-        except Exception as e:  # noqa: BLE001 — another pool may hold it (work queues allow one)
-            log.warning("legacy subject %s not drained: %s", subject, e)
 
     async def _consume(self, subject: str, durable: str, handler: Handler) -> None:
         psub = await self._js.pull_subscribe(subject, durable=durable, stream=C.JOB_STREAM)

@@ -156,7 +156,10 @@ Event-carrying results are claim-checked through the blob store; jobs that keep
 failing are terminated after five deliveries with a failure envelope carrying
 the real error.
 
-Per-user credentials are delivered via `cairn.creds.garmin.get`. The capability
+Per-user credentials are delivered via `cairn.creds.garmin.get` (the
+connection's `client_id`/`client_secret`, i.e. the Garmin Connect login; core
+labels the connect form from the `provider_meta` this worker publishes in the
+`cairn_worker_manifests` KV). The capability
 manifest advertises Activity, HRV, Sleep, Weight, Steps, RestingHR and Gear.
 
 Field mapping (activity and health) is verified against a small set of live
