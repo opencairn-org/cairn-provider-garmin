@@ -1,11 +1,13 @@
-"""Worker configuration from environment."""
+"""Worker configuration from environment, on top of the SDK's settings."""
 
 from __future__ import annotations
 
 import os
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from cairn_provider_sdk import Identity, Settings, read_release, worker_name
+from cairn_provider_sdk import config as sdk_config
 
 # PROVIDER + PACKAGE + versions are compile-time identity (core ADR 0005),
 # baked into the source, NOT env-overridable. DATASET_VERSION is the archive
@@ -17,67 +19,60 @@ PACKAGE = "cairn.workers.garmin"
 DATASET_VERSION = 1
 VERSION = "1.2"  # 1.1: gear id per activity; 1.2: gear read from the archive
 
-
-def _read_release() -> str:
-    """Release tag written into the image at build time (Dockerfile); "" in dev."""
-    try:
-        return (Path(__file__).with_name("RELEASE")).read_text().strip()
-    except OSError:
-        return ""
-
-
+# Release tag written into the image at build time (Dockerfile); "" in dev.
 # Core requires the same major.minor (core ADR 0005).
-RELEASE = _read_release()
+RELEASE = read_release(Path(__file__).with_name("RELEASE"))
 
 # WORKER_NAME is the admin-defined routing identity (it must match the
 # enrollment name) and is SHARED across every instance of this worker — so it is
 # env-configurable, defaulting to "garmin-fetcher". Distinct from instance_id
 # (below), which is per-instance.
-WORKER_NAME = os.getenv("CAIRN_WORKER_NAME", "garmin-fetcher")
+WORKER_NAME = worker_name("garmin-fetcher")
 
-JOB_STREAM = "CAIRN_JOBS"
-CORE_INFO_KV = "cairn_core"
+IDENTITY = Identity(
+    provider=PROVIDER,
+    package=PACKAGE,
+    version=VERSION,
+    dataset_version=DATASET_VERSION,
+    release=RELEASE,
+    worker_name=WORKER_NAME,
+)
+
+JOB_STREAM = sdk_config.JOB_STREAM
+CORE_INFO_KV = sdk_config.CORE_INFO_KV
+PRESENCE_KV = sdk_config.PRESENCE_KV
+# The manifest (parser version + how Garmin is connected) lives here; core
+# stores its provider_meta and drives the connect form from it.
+MANIFEST_KV = sdk_config.MANIFEST_KV
 
 
 def job_subject(job: str) -> str:
     """This pool's subject for a job kind (core ADR 0006)."""
-    return f"cairn.jobs.{job}.{PROVIDER}.{WORKER_NAME}"
+    return IDENTITY.job_subject(job)
 
 
-DISCOVER_SUBJECT = f"cairn.discover.{PROVIDER}.{WORKER_NAME}"
+DISCOVER_SUBJECT = IDENTITY.discover_subject
 # Results are per pool (core ADR 0006): cairn.results.<job>.<provider>.<name>.
-RESULT_SUBJECT = f"cairn.results.fetch_source.{PROVIDER}.{WORKER_NAME}"
-RESULT_METRICS = f"cairn.results.import_metrics.{PROVIDER}.{WORKER_NAME}"
+RESULT_SUBJECT = IDENTITY.result_subject("fetch_source")
+RESULT_METRICS = IDENTITY.result_subject("import_metrics")
+RESULT_GEAR = IDENTITY.result_subject("import_gear")
+# Reconcile results are account-suffixed so the server can attribute the
+# watermark: cairn.results.reconcile.garmin.<name>.<external_account_id>.
+RESULT_RECONCILE_PREFIX = IDENTITY.result_subject("reconcile")
 SUBJ_FETCH = job_subject("fetch_source")
 SUBJ_METRICS = job_subject("import_metrics")
 SUBJ_PARSE_BLOB = job_subject("parse_blob")
 SUBJ_RECONCILE = job_subject("reconcile")
 SUBJ_GEAR = job_subject("import_gear")
-RESULT_GEAR = f"cairn.results.import_gear.{PROVIDER}.{WORKER_NAME}"
-# Reconcile results are account-suffixed so the server can attribute the
-# watermark: cairn.results.reconcile.garmin.<external_account_id>.
-RESULT_RECONCILE_PREFIX = f"cairn.results.reconcile.{PROVIDER}.{WORKER_NAME}"
-PRESIGN_DOWNLOAD_SUBJECT = f"cairn.blobs.presign_download.{PROVIDER}"
-PRESENCE_KV = "cairn_worker_presence"
-# The manifest (parser version + how Garmin is connected) lives here; core
-# stores its provider_meta and drives the connect form from it.
-MANIFEST_KV = "cairn_worker_manifests"
+CREDS_SUBJECT = IDENTITY.creds_subject
+PRESIGN_SUBJECT = IDENTITY.presign_upload_subject
+PRESIGN_DOWNLOAD_SUBJECT = IDENTITY.presign_download_subject
 
 
 @dataclass
-class Config:
-    nats_url: str = field(default_factory=lambda: os.getenv("CAIRN_NATS_URL", "nats://localhost:4222"))
-    # Per-instance id, only needs to be UNIQUE per running instance (it
-    # disambiguates replicas of the same WORKER_NAME in presence/heartbeats).
-    # Unset → a random uuid is generated; in k8s set it to the pod name so a
-    # restart reuses the same presence key instead of leaving a ghost.
-    instance_id: str = field(default_factory=lambda: os.getenv("CAIRN_WORKER_INSTANCE_ID", "") or uuid.uuid4().hex[:12])
-    # Enrollment token from core; core's NATS auth-callout admits it scoped to this provider.
-    enrollment_token: str = field(default_factory=lambda: os.getenv("CAIRN_WORKER_ENROLLMENT_TOKEN", ""))
-    nats_user: str = field(default_factory=lambda: os.getenv("CAIRN_NATS_USER", ""))
-    nats_password: str = field(default_factory=lambda: os.getenv("CAIRN_NATS_PASSWORD", ""))
-    heartbeat_interval_s: int = field(default_factory=lambda: int(os.getenv("CAIRN_HEARTBEAT_INTERVAL_S", "20")))
-    pull_batch: int = field(default_factory=lambda: int(os.getenv("CAIRN_PULL_BATCH", "4")))
+class Config(Settings):
+    """The SDK's NATS settings (CAIRN_NATS_URL, CAIRN_WORKER_ENROLLMENT_TOKEN,
+    CAIRN_WORKER_INSTANCE_ID, ...) plus the Garmin-specific ones."""
 
     # Dev fallback Garmin credentials when the job carries none (single account).
     garmin_email: str = field(default_factory=lambda: os.getenv("CAIRN_GARMIN_EMAIL", ""))

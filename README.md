@@ -10,10 +10,11 @@ jobs from `cairn.jobs.*.garmin`, publishes protojson `cairn.worker.v1.JobResult`
 to `cairn.results.*.garmin`, and heartbeats its capability manifest to the
 `cairn_worker_presence` KV.
 
-This is a **standalone repository** with no dependency on cairn-core. The only
-contract it shares with the server is the proto messages (committed under
-`proto/`) and the NATS subjects. Regenerate + recommit `proto/` from the Cairn
-proto contract when it changes.
+It is built on [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python),
+which owns the NATS runtime and ships the contract stubs; this repository
+holds the Garmin client, the mapping and the handlers, with no dependency on
+cairn-core. Until the SDK is published it is a path dependency on a sibling
+checkout (`../cairn-provider-sdk-python`).
 
 ## Run (dev)
 
@@ -28,8 +29,7 @@ export CAIRN_GARMIN_PASSWORD=...
 uv run python -m cairn_garmin.main
 ```
 
-The generated proto stubs are loaded from `./proto` (override with
-`CAIRN_PROTO_PATH`). `make check` runs lint, mypy strict, the tests with a
+`make check` runs lint, mypy strict, the tests with a
 coverage floor, the dependency audit, the image build and fleetlint; see
 [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

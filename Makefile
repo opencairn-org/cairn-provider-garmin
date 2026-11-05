@@ -7,6 +7,9 @@ MAIN_BRANCH ?= main
 # Python tools (ruff, mypy, pytest, pip-audit, ...) are pinned in uv.lock; the coverage floor is in pyproject.toml.
 UV          := uv run --locked
 IMAGE       ?= localhost/cairn-provider-garmin:dev
+# The SDK is a path dependency until it is published (pyproject.toml [tool.uv.sources]);
+# the image build mounts it as the `sdk` build context.
+SDK_PATH    ?= ../cairn-provider-sdk-python
 # podman where available (no daemon needed), else docker
 CONTAINER   ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 # Licenses allowed for runtime dependencies (the ones shipped in the image); substring match.
@@ -48,12 +51,12 @@ test: ## all tests
 cover: ## tests with coverage; fails below fail_under in pyproject.toml
 	$(UV) pytest --cov --cov-report=term
 
-audit: ## vulnerabilities, licenses, unused/missing deps, lockfile, secrets
+audit: ## vulnerabilities, licenses, unused/missing deps, lockfile, secrets (the path-sourced SDK is audited in its own repo)
 	uv lock --check
-	uv export --locked --all-groups --no-emit-project --format requirements-txt -q \
+	uv export --locked --all-groups --no-emit-project --no-emit-package cairn-provider-sdk --format requirements-txt -q \
 	  | $(UV) pip-audit --strict --disable-pip --require-hashes -r /dev/stdin
 	$(UV) pip-licenses --partial-match --allow-only="$(LICENSES)" \
-	  --packages $$(uv export --locked --no-dev --no-emit-project --no-hashes --no-header --no-annotate -q | sed -E 's/[=;].*//')
+	  --packages $$(uv export --locked --no-dev --no-emit-project --no-emit-package cairn-provider-sdk --no-hashes --no-header --no-annotate -q | sed -E 's/[=;].*//')
 	$(UV) deptry .
 	gitleaks git --no-banner --redact .
 
@@ -62,17 +65,17 @@ bench: ## benchmarks (none yet; not part of check)
 
 mutate: ## mutation testing of cairn_garmin (weekly in CI, not part of check); fails below MUTATION_MIN % killed
 	rm -rf mutants
-	CAIRN_PROTO_PATH=$$PWD/proto $(UV) mutmut run
+	$(UV) mutmut run
 	$(UV) mutmut export-cicd-stats
 	$(UV) python -c 'import json; s = json.load(open("mutants/mutmut-cicd-stats.json")); t = s["total"] - s["skipped"]; k = s["killed"] + s["timeout"]; p = 100 * k / t if t else 0; print(f"mutation score {p:.1f}% (minimum $(MUTATION_MIN)%)"); raise SystemExit(p < $(MUTATION_MIN))'
 
 build: ## byte-compile the worker, then build the image and smoke-test its imports
 	$(UV) python -m compileall -q cairn_garmin
 	$(MAKE) image
-	$(CONTAINER) run --rm --entrypoint python $(IMAGE) -c "import cairn_garmin.runtime, cairn_garmin.archive"
+	$(CONTAINER) run --rm --entrypoint python $(IMAGE) -c "import cairn_garmin.runtime, cairn_provider_sdk"
 
-image: ## container image only
-	$(CONTAINER) build -t $(IMAGE) .
+image: ## container image only (the SDK checkout is the `sdk` build context)
+	$(CONTAINER) build --build-context sdk=$(SDK_PATH) -t $(IMAGE) .
 
 dist: image ## the release artifact is the image; the build workflow pushes, signs and attests it
 

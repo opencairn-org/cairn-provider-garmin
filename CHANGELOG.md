@@ -6,6 +6,20 @@ to follow [Semantic Versioning](https://semver.org/). Dates are ISO-8601.
 
 ## [Unreleased]
 
+### Changed
+- The worker is built on [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python)
+  0.7: the NATS runtime (`runtime.py`), blob I/O (`archive.py`), the NATS
+  settings and the vendored proto stubs (`proto/`) moved there; `runtime.py`
+  keeps the Garmin handlers on top of the SDK's `Worker`. Behaviour, subjects,
+  durable consumer names and the archive envelope are unchanged.
+- Until the SDK is published the dependency is a path source
+  (`../cairn-provider-sdk-python`, `[tool.uv.sources]`, editable). The image
+  build takes that checkout as the `sdk` build context (`make image` passes
+  `--build-context sdk=../cairn-provider-sdk-python`; the Dockerfile copies
+  its sources and installs them as a wheel), and CI checks the SDK out beside
+  the worker. Switch to a version pin at release.
+- `CAIRN_PROTO_PATH` is gone: the contract stubs come with the SDK.
+
 ## [0.7.0] — 2026-11-05
 
 Contract change: needs cairn-core 0.7 (docs/adr/0005).

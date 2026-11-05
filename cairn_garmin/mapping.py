@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from google.protobuf import duration_pb2, timestamp_pb2
-
-import cairn_garmin  # noqa: F401  (bootstraps the proto path)
 from cairn.v1 import activity_pb2 as a
 from cairn.v1 import gear_pb2 as g
 from cairn.worker.v1 import worker_service_pb2 as w
+from cairn_provider_sdk import archive
+from google.protobuf import duration_pb2, timestamp_pb2
+
+from . import config as C
 
 JSON = dict[str, Any]
 
@@ -340,10 +341,12 @@ def metric_event(user_id: str, account_id: str, key: str, day_ms: int, value: fl
     return w.WorkerEvent(type=w.WORKER_EVENT_TYPE_METRIC, metric=im)
 
 
-def job_result(events: list[w.WorkerEvent], *, name: str, version: str, package: str, release: str = "") -> w.JobResult:
-    return w.JobResult(
-        events=events, worker_name=name, worker_version=version, worker_package=package, worker_release=release
-    )
+def envelope(activity: JSON, details: JSON | None, gear: list[JSON] | None) -> JSON:
+    """The archived envelope: every input the parser reads (core ADR 0005).
+    gear is None when the per-activity lookup was skipped or failed, [] when
+    Garmin recorded none; archives of parser <= 1.1 have no "gear" key.
+    """
+    return archive.envelope(C.IDENTITY, activity=activity, details=details, gear=gear)
 
 
 def parse_archive(env: JSON, *, user_id: str, account_id: str, ext_id: str, blob_id: str = "") -> list[w.WorkerEvent]:

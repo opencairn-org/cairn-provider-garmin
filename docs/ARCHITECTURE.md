@@ -9,23 +9,22 @@ the server presigns. The handlers and settings are listed in the
 ## Components
 
 - **`cairn_garmin/main.py`** — entrypoint; wires SIGINT/SIGTERM to a clean stop.
-- **`cairn_garmin/runtime.py`** — the `Worker`: NATS connection, presence
-  heartbeat, the `discover` request/reply handler and one JetStream pull
-  consumer per job subject (`fetch_source`, `import_metrics`, `parse_blob`,
-  `reconcile`, `import_gear`). It owns retries, ack extension and failure envelopes.
+- **`cairn_garmin/runtime.py`** — the `Worker`, a `cairn_provider_sdk.Worker`
+  with the Garmin handlers: `discover` and one handler per job kind
+  (`fetch_source`, `import_metrics`, `parse_blob`, `reconcile`, `import_gear`).
+  The SDK owns the connection, presence, manifest, consumers, retries, ack
+  extension, claim-checked results and failure envelopes.
 - **`cairn_garmin/garmin_client.py`** — a thin wrapper over `garminconnect`
   with a per-account token store and the pure health-metric extraction.
 - **`cairn_garmin/mapping.py`** — pure functions from Garmin JSON to the
   `cairn.worker.v1` / `cairn.v1` proto messages.
-- **`cairn_garmin/archive.py`** — raw-response archival and claim-check
-  uploads through presigned URLs.
-- **`proto/`** — generated protobuf modules and type stubs of the Cairn
-  contract, committed so the worker builds without cairn-core.
+- **cairn-provider-sdk** — the runtime, blob I/O through presigned URLs and
+  the generated contract stubs (`cairn.v1`, `cairn.worker.v1`).
 
 ## Boundaries
 
 - The only contract with the server is the proto messages plus the NATS
-  subjects in `config.py`. There is no code dependency on cairn-core.
+  subjects, both from the SDK. There is no code dependency on cairn-core.
 - Garmin credentials are never part of a job: the worker requests them per
   account on `cairn.creds.garmin.get` and caches only the resulting client.
 - Blob storage is reached only via presigned URLs from the server; the worker
@@ -53,6 +52,6 @@ the server presigns. The handlers and settings are listed in the
 - **Claim-check for results.** Activity streams can exceed the broker's
   `max_payload`; uploading the body and publishing a reference keeps every
   message small regardless of activity size.
-- **Committed generated stubs.** The worker pins the contract version it was
-  built against and builds without buf or cairn-core; regenerating `proto/`
-  is an explicit change.
+- **The contract comes from the SDK.** The worker pins the contract version
+  through the SDK release it is built on and builds without buf or
+  cairn-core; the runtime is tested once, in the SDK.

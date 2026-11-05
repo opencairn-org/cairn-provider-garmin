@@ -7,10 +7,10 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from cairn.worker.v1 import worker_service_pb2 as w
+from cairn_provider_sdk import Job
 from google.protobuf import json_format
 
-import cairn_garmin  # noqa: F401 (proto path bootstrap)
-from cairn.worker.v1 import worker_service_pb2 as w
 from cairn_garmin import config as C
 from tests.fakes import make_worker
 
@@ -29,10 +29,10 @@ def _act(ext_id: int, start: datetime) -> dict[str, Any]:
     return {"activityId": ext_id, "beginTimestamp": int(start.timestamp() * 1000)}
 
 
-def _job(**over: Any) -> bytes:
+def _job(**over: Any) -> Job:
     base: dict[str, Any] = {"job_id": "j1", "account_id": "acc-1", "user_id": "u-1", "provider": "garmin"}
     base.update(over)
-    return json.dumps(base).encode()
+    return Job.of(base, subject=C.SUBJ_RECONCILE)
 
 
 def test_reconcile_enqueues_unknown_and_publishes_watermark() -> None:

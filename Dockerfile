@@ -7,19 +7,25 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /app
-# Runtime dependencies exactly as locked in uv.lock.
+# Runtime dependencies exactly as locked in uv.lock. cairn-provider-sdk is a
+# path dependency (../cairn-provider-sdk-python until it is published): its
+# sources come from the `sdk` build context (`--build-context sdk=<checkout>`)
+# at that relative location and are installed as a wheel (--no-editable), so
+# the venv carries nothing of this stage's copy.
+COPY --from=sdk pyproject.toml README.md LICENSE /cairn-provider-sdk-python/
+COPY --from=sdk cairn_provider_sdk /cairn-provider-sdk-python/cairn_provider_sdk
+COPY --from=sdk cairn /cairn-provider-sdk-python/cairn
 COPY pyproject.toml uv.lock .python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project
+    uv sync --locked --no-dev --no-install-project --no-editable
 
 FROM docker.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 RUN useradd --uid 10001 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin cairn \
     && mkdir -p /data/garth && chown -R cairn: /data
 WORKDIR /app
 COPY --from=deps /opt/venv /opt/venv
-# Worker package + the committed generated proto stubs it imports.
+# Worker package; the contract stubs come with the SDK in the venv.
 COPY cairn_garmin ./cairn_garmin
-COPY proto /opt/cairn-proto
 # Release tag for the core compatibility check (core ADR 0005); CI passes the tag.
 ARG VERSION=docker
 RUN printf '%s\n' "$VERSION" > /app/cairn_garmin/RELEASE
@@ -28,7 +34,6 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    CAIRN_PROTO_PATH=/opt/cairn-proto \
     CAIRN_GARTH_HOME=/data/garth
 
 USER 10001

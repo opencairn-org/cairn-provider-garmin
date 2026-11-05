@@ -33,9 +33,11 @@ prek install      # git hooks from .pre-commit-config.yaml
   `uv.lock` together.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/);
   the commit-msg hook enforces it. `main` is changed through pull requests only.
-- `proto/` is generated from the Cairn proto contract. Regenerate the
-  `_pb2.py` modules and their `_pb2.pyi` stubs together (`--python_out` and
-  `--pyi_out`) and do not edit them by hand.
+- The NATS runtime and the contract stubs come from
+  [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python);
+  until it is published the worker depends on a sibling checkout
+  (`../cairn-provider-sdk-python`, see `[tool.uv.sources]`). Contract changes
+  go there first.
 - Mapping changes come with a test using a real (anonymised) Garmin response
   shape; `cairn_garmin/mapping.py` documents the quirks seen so far.
 
