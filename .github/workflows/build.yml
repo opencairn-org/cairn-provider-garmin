@@ -17,8 +17,8 @@ name: Build & push garmin-worker image
 #     --certificate-identity-regexp \
 #       '^https://github.com/opencairn-org/cairn-provider-garmin/\.github/workflows/build\.yml@.*'
 #
-# The generated proto stubs the worker imports (./proto) are committed, so no
-# buf step is needed. This repo has no dependency on cairn-core.
+# The contract stubs come with cairn-provider-sdk (the wheel from its GitHub
+# release), so no buf step is needed. This repo has no dependency on cairn-core.
 #
 # Triggers:
 #   - push to the default branch  → publishes  sha-<short>  (+ latest)

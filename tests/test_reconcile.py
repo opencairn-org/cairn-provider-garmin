@@ -7,12 +7,10 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from google.protobuf import json_format
+from cairn_provider_sdk import Job
 
-import cairn_garmin  # noqa: F401 (proto path bootstrap)
-from cairn.worker.v1 import worker_service_pb2 as w
 from cairn_garmin import config as C
-from tests.fakes import make_worker
+from tests.fakes import job_result, make_worker
 
 
 class FakeClient:
@@ -29,10 +27,10 @@ def _act(ext_id: int, start: datetime) -> dict[str, Any]:
     return {"activityId": ext_id, "beginTimestamp": int(start.timestamp() * 1000)}
 
 
-def _job(**over: Any) -> bytes:
+def _job(**over: Any) -> Job:
     base: dict[str, Any] = {"job_id": "j1", "account_id": "acc-1", "user_id": "u-1", "provider": "garmin"}
     base.update(over)
-    return json.dumps(base).encode()
+    return Job.of(base, subject=C.SUBJ_RECONCILE)
 
 
 def test_reconcile_enqueues_unknown_and_publishes_watermark() -> None:
@@ -58,7 +56,7 @@ def test_reconcile_enqueues_unknown_and_publishes_watermark() -> None:
     assert len(results) == 1
     subject, data = results[0]
     assert subject == f"{C.RESULT_RECONCILE_PREFIX}.acc-1"
-    jr = json_format.Parse(data, w.JobResult())
+    jr = job_result(data)
     got = jr.new_watermark.ToDatetime(tzinfo=UTC)
     assert abs((got - (now - timedelta(hours=1))).total_seconds()) < 1
 

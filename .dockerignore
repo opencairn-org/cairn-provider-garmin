@@ -1,9 +1,8 @@
-# Only pyproject.toml, uv.lock, .python-version, cairn_garmin/ and proto/ reach the image.
+# Only pyproject.toml, uv.lock, .python-version and cairn_garmin/ reach the image.
 *
 !pyproject.toml
 !uv.lock
 !.python-version
 !cairn_garmin/
-!proto/
 **/__pycache__
 **/*.pyc

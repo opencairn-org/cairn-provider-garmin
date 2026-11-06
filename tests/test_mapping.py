@@ -2,8 +2,8 @@
 
 from typing import Any
 
-import cairn_garmin  # noqa: F401  (bootstraps the proto path)
 from cairn.v1 import activity_pb2 as a
+
 from cairn_garmin import mapping
 
 # --- start_ms ----------------------------------------------------------------

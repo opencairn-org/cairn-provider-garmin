@@ -6,6 +6,23 @@ to follow [Semantic Versioning](https://semver.org/). Dates are ISO-8601.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-11-06
+
+Built on [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python)
+0.7.1, released in lockstep with cairn-core 0.7.1. Works with any core 0.7.
+
+### Changed
+- The worker is built on [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python)
+  0.7: the NATS runtime (`runtime.py`), blob I/O (`archive.py`), the NATS
+  settings and the vendored proto stubs (`proto/`) moved there; `runtime.py`
+  keeps the Garmin handlers on top of the SDK's `Worker`. Behaviour, subjects,
+  durable consumer names and the archive envelope are unchanged.
+- The SDK is pinned to the wheel of its v0.7.1 GitHub release
+  (`[tool.uv.sources]`); `uv.lock` holds its hash.
+- `CAIRN_PROTO_PATH` is gone: the contract stubs come with the SDK.
+- Tests parse every published and claim-checked result through the SDK's
+  `assert_importable`, so a result core would reject or refuse fails them.
+
 ## [0.7.0] — 2026-11-05
 
 Contract change: needs cairn-core 0.7 (docs/adr/0005).

@@ -7,7 +7,8 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /app
-# Runtime dependencies exactly as locked in uv.lock.
+# Runtime dependencies exactly as locked in uv.lock (cairn-provider-sdk is the
+# wheel from its GitHub release, checked against the locked hash).
 COPY pyproject.toml uv.lock .python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
@@ -17,9 +18,8 @@ RUN useradd --uid 10001 --user-group --no-create-home --home-dir /data --shell /
     && mkdir -p /data/garth && chown -R cairn: /data
 WORKDIR /app
 COPY --from=deps /opt/venv /opt/venv
-# Worker package + the committed generated proto stubs it imports.
+# Worker package; the contract stubs come with the SDK in the venv.
 COPY cairn_garmin ./cairn_garmin
-COPY proto /opt/cairn-proto
 # Release tag for the core compatibility check (core ADR 0005); CI passes the tag.
 ARG VERSION=docker
 RUN printf '%s\n' "$VERSION" > /app/cairn_garmin/RELEASE
@@ -28,7 +28,6 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    CAIRN_PROTO_PATH=/opt/cairn-proto \
     CAIRN_GARTH_HOME=/data/garth
 
 USER 10001

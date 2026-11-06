@@ -1,15 +1,14 @@
 [project]
 name = "cairn-provider-garmin"
-version = "0.7.0"
+version = "0.7.1"
 description = "Cairn worker that imports Garmin Connect activities and daily health metrics"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
+    "cairn-provider-sdk>=0.7.1,<0.8",
     "garminconnect>=0.2.19",
-    "nats-py>=2.7.0",
     "protobuf>=7.35",
-    "requests>=2.31",
 ]
 
 [dependency-groups]
@@ -17,6 +16,7 @@ dev = [
     "deptry",
     "mutmut>=3.8.0",
     "mypy",
+    "nats-py>=2.7.0",  # the permission test drives NATS directly; the worker itself goes through the SDK
     "nkeys>=0.2.1",
     "pip-audit",
     "pip-licenses",
@@ -25,19 +25,19 @@ dev = [
     "pytest-cov",
     "ruff",
     "types-protobuf>=7.35.1.20260906",
-    "types-requests",
 ]
 
 [tool.uv]
 # A service, not a library: dependencies only, code runs from the checkout.
 package = false
 
+[tool.uv.sources]
+# The wheel of the SDK's GitHub release (not on PyPI); uv.lock holds its hash.
+cairn-provider-sdk = { url = "https://github.com/opencairn-org/cairn-provider-sdk-python/releases/download/v0.7.1/cairn_provider_sdk-0.7.1-py3-none-any.whl" }
+
 [tool.ruff]
 line-length = 120
 target-version = "py314"
-extend-exclude = ["proto"]
-# Hooks pass file names; keep the generated stubs excluded then too.
-force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF", "BLE", "S", "PT", "ASYNC", "C90", "T20"]
@@ -46,12 +46,11 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF", "BLE", "S", "PT", "
 "tests/**" = ["S101", "S106"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["cairn_garmin", "cairn", "tests"]
+known-first-party = ["cairn_garmin", "tests"]
 
 [tool.mypy]
 strict = true
 python_version = "3.14"
-mypy_path = "proto"
 files = ["cairn_garmin", "tests"]
 explicit_package_bases = true
 
@@ -59,11 +58,6 @@ explicit_package_bases = true
 # garminconnect, garth and nkeys ship no type information.
 module = ["garminconnect", "garminconnect.*", "garth", "garth.*", "nkeys"]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# Generated protobuf stubs under proto/: used for types, not checked themselves.
-module = ["cairn.*"]
-ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -75,15 +69,17 @@ source = ["cairn_garmin"]
 branch = true
 
 [tool.coverage.report]
-# The suite is at 91%; main.py (signal wiring) is the only untested module.
+# main.py (signal wiring) is the only untested module.
 fail_under = 85
 show_missing = true
 skip_covered = true
 
 [tool.deptry]
-known_first_party = ["cairn_garmin", "cairn", "tests"]
-# Generated stubs; the connect clients are unused by the worker.
-extend_exclude = ["proto"]
+known_first_party = ["cairn_garmin", "tests"]
+
+[tool.deptry.package_module_name_map]
+# The SDK distribution ships the contract stubs as the top-level package `cairn` too.
+cairn-provider-sdk = ["cairn_provider_sdk", "cairn"]
 
 [tool.mutmut]
 # `make mutate`: weekly in CI, not part of check. main.py is signal wiring with no unit tests.
