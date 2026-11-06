@@ -3,8 +3,19 @@ a Garmin Worker built without a NATS connection."""
 
 from typing import cast
 
-from cairn_provider_sdk.testing import FakeJS, FakeKV, FakeMsg, FakeNC, FakePullSub, Responder, as_nats
+from cairn.worker.v1 import worker_service_pb2 as w
+from cairn_provider_sdk.testing import (
+    FakeJS,
+    FakeKV,
+    FakeMsg,
+    FakeNC,
+    FakePullSub,
+    Responder,
+    as_nats,
+    assert_importable,
+)
 from cairn_provider_sdk.testing import make_worker as sdk_make_worker
+from google.protobuf import json_format
 
 from cairn_garmin import config as C
 from cairn_garmin import runtime
@@ -25,3 +36,8 @@ def make_worker(
     )
     wk._clients = {account_id: cast(GarminClient, client)} if client is not None else {}
     return wk, js
+
+
+def job_result(data: bytes | str) -> w.JobResult:
+    """A published or claim-checked result, failing the test where core would not import it."""
+    return assert_importable(json_format.Parse(data, w.JobResult()))

@@ -19,6 +19,8 @@ to follow [Semantic Versioning](https://semver.org/). Dates are ISO-8601.
   its sources and installs them as a wheel), and CI checks the SDK out beside
   the worker. Switch to a version pin at release.
 - `CAIRN_PROTO_PATH` is gone: the contract stubs come with the SDK.
+- Tests parse every published and claim-checked result through the SDK's
+  `assert_importable`, so a result core would reject or refuse fails them.
 
 ## [0.7.0] — 2026-11-05
 

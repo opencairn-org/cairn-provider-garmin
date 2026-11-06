@@ -17,7 +17,7 @@ from google.protobuf import json_format
 
 from cairn_garmin import config as C
 from cairn_garmin import mapping, runtime
-from tests.fakes import FakeJS, FakeKV, FakeNC, Responder, make_worker
+from tests.fakes import FakeJS, FakeKV, FakeNC, Responder, job_result, make_worker
 
 START_MS = 1_700_000_000_000
 
@@ -86,7 +86,7 @@ def discover(wk: runtime.Worker, req: dict[str, Any]) -> dict[str, Any]:
 
 
 def results(js: FakeJS, subject: str) -> list[w.JobResult]:
-    return [json_format.Parse(d, w.JobResult()) for s, d, _ in js.published if s == subject]
+    return [job_result(d) for s, d, _ in js.published if s == subject]
 
 
 @pytest.fixture
@@ -158,7 +158,7 @@ def test_fetch_source_publishes_activity_with_stream(uploads: list[bytes]) -> No
     (env,) = results(js, C.RESULT_SUBJECT)
     assert env.payload_ref.blob_id == "transfer/1"
     assert (env.worker_name, env.worker_version, env.worker_package) == (C.WORKER_NAME, C.VERSION, C.PACKAGE)
-    full = json_format.Parse(uploads[0], w.JobResult())
+    full = job_result(uploads[0])
     act = full.events[-1].activity  # the GEAR event precedes it
     assert act.ref.external_id == "7"
     assert act.raw_blob_id == "raw/7.json"
@@ -168,7 +168,7 @@ def test_fetch_source_publishes_activity_with_stream(uploads: list[bytes]) -> No
 def test_fetch_source_carries_gear(uploads: list[bytes]) -> None:
     wk, _ = make_worker(FakeClient())
     asyncio.run(wk._handle_fetch_source(job(account_id="acc-1", user_id="u1", ext_id="7")))
-    events = json_format.Parse(uploads[0], w.JobResult()).events
+    events = job_result(uploads[0]).events
     assert [e.type for e in events] == [w.WORKER_EVENT_TYPE_GEAR, w.WORKER_EVENT_TYPE_ACTIVITY]
     gear = events[0].gear
     assert gear.ref.external_id == "aaaa-1"
@@ -186,7 +186,7 @@ def test_fetch_source_gear_is_optional(uploads: list[bytes]) -> None:
 
     wk, _ = make_worker(Broken())
     asyncio.run(wk._handle_fetch_source(job(account_id="acc-1", ext_id="7")))
-    events = json_format.Parse(uploads[0], w.JobResult()).events
+    events = job_result(uploads[0]).events
     assert [e.type for e in events] == [w.WORKER_EVENT_TYPE_ACTIVITY]
     assert events[0].activity.payload.gear_external_id == ""
 
@@ -195,7 +195,7 @@ def test_fetch_source_gear_lookup_can_be_disabled(uploads: list[bytes]) -> None:
     cfg = C.Config(garmin_email="", garmin_password="", garth_home="/nonexistent", fetch_activity_gear=False)
     wk, _ = make_worker(FakeClient(), cfg=cfg)
     asyncio.run(wk._handle_fetch_source(job(account_id="acc-1", ext_id="7")))
-    events = json_format.Parse(uploads[0], w.JobResult()).events
+    events = job_result(uploads[0]).events
     assert len(events) == 1
     assert events[0].activity.payload.gear_external_id == ""
 
@@ -204,7 +204,7 @@ def test_import_gear_publishes_list_with_defaults(uploads: list[bytes]) -> None:
     wk, js = make_worker(FakeClient())
     asyncio.run(wk._handle_import_gear(job(account_id="acc-1", user_id="u1")))
     assert js.published[-1][0] == C.RESULT_GEAR
-    events = json_format.Parse(uploads[0], w.JobResult()).events
+    events = job_result(uploads[0]).events
     by_id = {e.gear.ref.external_id: e.gear.payload for e in events}
     assert set(by_id) == {"aaaa-1", "bbbb-2"}
     assert by_id["aaaa-1"].brand == "Canyon"
@@ -235,7 +235,7 @@ def test_import_gear_defaults_are_optional(uploads: list[bytes]) -> None:
 
     wk, _ = make_worker(NoDefaults())
     asyncio.run(wk._handle_import_gear(job(account_id="acc-1", user_id="u1")))
-    events = json_format.Parse(uploads[0], w.JobResult()).events
+    events = job_result(uploads[0]).events
     assert all(not list(e.gear.payload.default_for) for e in events)
 
 
@@ -259,7 +259,7 @@ def test_parse_blob_remaps_archived_envelope(uploads: list[bytes], monkeypatch: 
         )
     )
 
-    act = json_format.Parse(uploads[0], w.JobResult()).events[0].activity
+    act = job_result(uploads[0]).events[0].activity
     assert act.raw_blob_id == "raw/7.json"
     assert act.stream.sample_count == 2
 
@@ -271,7 +271,7 @@ def test_import_metrics_emits_one_event_per_day(uploads: list[bytes]) -> None:
     asyncio.run(wk._handle_import_metrics(job(account_id="acc-1", user_id="u1", since_unix=0, until_unix=2 * day)))
 
     assert client.days == ["1970-01-01", "1970-01-02", "1970-01-03"]
-    events = json_format.Parse(uploads[0], w.JobResult()).events
+    events = job_result(uploads[0]).events
     assert [e.metric.key for e in events] == ["Steps"] * 3
 
 
@@ -337,7 +337,7 @@ def test_fetch_source_archives_what_it_parsed(uploads: list[bytes], monkeypatch:
     assert env["gear"] == [GEAR_BIKE]
     # Re-parsing the archive reproduces the import.
     reparsed = mapping.parse_archive(env, user_id="u1", account_id="acc-1", ext_id="7", blob_id="raw/7.json")
-    imported = json_format.Parse(uploads[0], w.JobResult()).events
+    imported = job_result(uploads[0]).events
     # Blob metadata is the upload's, not parser output; core keeps it on re-parse.
     imported[-1].activity.ClearField("raw_content_type")
     imported[-1].activity.ClearField("raw_size_bytes")
@@ -353,7 +353,7 @@ def test_parse_blob_reads_archived_gear(uploads: list[bytes], monkeypatch: pytes
     asyncio.run(
         wk._handle_parse_blob(job(ext_id="7", user_id="u1", account_id="acc-1", blob={"fallback_handle": "raw/7.json"}))
     )
-    events = json_format.Parse(uploads[0], w.JobResult()).events
+    events = job_result(uploads[0]).events
     assert [e.type for e in events] == [w.WORKER_EVENT_TYPE_GEAR, w.WORKER_EVENT_TYPE_ACTIVITY]
     assert events[1].activity.payload.gear_external_id == "aaaa-1"
 
