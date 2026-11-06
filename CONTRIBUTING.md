@@ -35,9 +35,10 @@ prek install      # git hooks from .pre-commit-config.yaml
   the commit-msg hook enforces it. `main` is changed through pull requests only.
 - The NATS runtime and the contract stubs come from
   [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python);
-  until it is published the worker depends on a sibling checkout
-  (`../cairn-provider-sdk-python`, see `[tool.uv.sources]`). Contract changes
-  go there first.
+  the worker pins the wheel of an SDK release in `[tool.uv.sources]`.
+  Contract changes go there first; to try one, point the source at a local
+  checkout (`{ path = "../cairn-provider-sdk-python", editable = true }`) and
+  restore the pin before committing.
 - Mapping changes come with a test using a real (anonymised) Garmin response
   shape; `cairn_garmin/mapping.py` documents the quirks seen so far.
 

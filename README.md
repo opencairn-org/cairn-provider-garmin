@@ -13,8 +13,8 @@ to `cairn.results.*.garmin`, and heartbeats its capability manifest to the
 It is built on [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python),
 which owns the NATS runtime and ships the contract stubs; this repository
 holds the Garmin client, the mapping and the handlers, with no dependency on
-cairn-core. Until the SDK is published it is a path dependency on a sibling
-checkout (`../cairn-provider-sdk-python`).
+cairn-core. The SDK's major.minor follows cairn-core's, and so does this
+worker's: 0.7.x runs against core 0.7.
 
 ## Run (dev)
 

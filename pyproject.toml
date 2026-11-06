@@ -6,7 +6,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "cairn-provider-sdk",
+    "cairn-provider-sdk>=0.7.1,<0.8",
     "garminconnect>=0.2.19",
     "protobuf>=7.35",
 ]
@@ -32,8 +32,8 @@ dev = [
 package = false
 
 [tool.uv.sources]
-# Local checkout until the SDK is published; switch to a version pin at release.
-cairn-provider-sdk = { path = "../cairn-provider-sdk-python", editable = true }
+# The wheel of the SDK's GitHub release (not on PyPI); uv.lock holds its hash.
+cairn-provider-sdk = { url = "https://github.com/opencairn-org/cairn-provider-sdk-python/releases/download/v0.7.1/cairn_provider_sdk-0.7.1-py3-none-any.whl" }
 
 [tool.ruff]
 line-length = 120

@@ -12,12 +12,8 @@ to follow [Semantic Versioning](https://semver.org/). Dates are ISO-8601.
   settings and the vendored proto stubs (`proto/`) moved there; `runtime.py`
   keeps the Garmin handlers on top of the SDK's `Worker`. Behaviour, subjects,
   durable consumer names and the archive envelope are unchanged.
-- Until the SDK is published the dependency is a path source
-  (`../cairn-provider-sdk-python`, `[tool.uv.sources]`, editable). The image
-  build takes that checkout as the `sdk` build context (`make image` passes
-  `--build-context sdk=../cairn-provider-sdk-python`; the Dockerfile copies
-  its sources and installs them as a wheel), and CI checks the SDK out beside
-  the worker. Switch to a version pin at release.
+- The SDK is pinned to the wheel of its v0.7.1 GitHub release
+  (`[tool.uv.sources]`); `uv.lock` holds its hash.
 - `CAIRN_PROTO_PATH` is gone: the contract stubs come with the SDK.
 - Tests parse every published and claim-checked result through the SDK's
   `assert_importable`, so a result core would reject or refuse fails them.

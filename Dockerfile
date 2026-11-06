@@ -7,17 +7,11 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /app
-# Runtime dependencies exactly as locked in uv.lock. cairn-provider-sdk is a
-# path dependency (../cairn-provider-sdk-python until it is published): its
-# sources come from the `sdk` build context (`--build-context sdk=<checkout>`)
-# at that relative location and are installed as a wheel (--no-editable), so
-# the venv carries nothing of this stage's copy.
-COPY --from=sdk pyproject.toml README.md LICENSE /cairn-provider-sdk-python/
-COPY --from=sdk cairn_provider_sdk /cairn-provider-sdk-python/cairn_provider_sdk
-COPY --from=sdk cairn /cairn-provider-sdk-python/cairn
+# Runtime dependencies exactly as locked in uv.lock (cairn-provider-sdk is the
+# wheel from its GitHub release, checked against the locked hash).
 COPY pyproject.toml uv.lock .python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project --no-editable
+    uv sync --locked --no-dev --no-install-project
 
 FROM docker.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 RUN useradd --uid 10001 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin cairn \
