@@ -6,6 +6,11 @@ to follow [Semantic Versioning](https://semver.org/). Dates are ISO-8601.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-11-06
+
+Built on [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python)
+0.7.1, released in lockstep with cairn-core 0.7.1. Works with any core 0.7.
+
 ### Changed
 - The worker is built on [cairn-provider-sdk](https://github.com/opencairn-org/cairn-provider-sdk-python)
   0.7: the NATS runtime (`runtime.py`), blob I/O (`archive.py`), the NATS
