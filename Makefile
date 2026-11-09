@@ -20,7 +20,7 @@ FLEETLINT_VERSION ?= v0.5.1
 MUTATION_MIN ?= 60
 # nats-server for the permission integration test; go install verifies it against sum.golang.org.
 # renovate: datasource=go depName=github.com/nats-io/nats-server/v2
-NATS_SERVER_VERSION ?= v2.15.1
+NATS_SERVER_VERSION ?= v2.15.2
 
 .PHONY: help tools fmt lint test cover audit bench mutate build image dist check-fast check release clean
 
