@@ -30,6 +30,9 @@
 
   // Never propose a release younger than 3 days; security fixes bypass this.
   minimumReleaseAge: '3 days',
+  // Digest updates and lock file maintenance carry no release timestamp; without
+  // this their renovate/stability-days check stays pending and they never merge.
+  minimumReleaseAgeBehaviour: 'timestamp-optional',
   internalChecksFilter: 'strict',
 
   packageRules: [
